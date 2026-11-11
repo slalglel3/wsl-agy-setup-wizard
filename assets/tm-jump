@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# tm-jump: Fast session switcher for Donagy KeyBridge
+TARGET_NUM="$1"
+ACTIVE_FILE="/dev/shm/donagy_active_session"
+
+if [ -z "$TARGET_NUM" ]; then
+    exit 0
+fi
+
+SESSIONS=($(tmux list-sessions -F "#{session_name}" 2>/dev/null))
+IDX=$((TARGET_NUM - 1))
+
+if [ $IDX -ge 0 ] && [ $IDX -lt ${#SESSIONS[@]} ]; then
+    TARGET_SESS="${SESSIONS[$IDX]}"
+    echo "$TARGET_SESS" > "$ACTIVE_FILE"
+fi

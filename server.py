@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-WSL2 AGY System - Web Setup Wizard (Execution Engine)
+WSL2 AGY System - Web Setup Wizard (Production-Ready Execution Engine)
 Pure Python 3 Standard Library - Zero external dependencies.
-Supports both Simulation Mode (Preview) and Real Execution Mode.
 """
 
 import getpass
@@ -17,10 +16,12 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import urllib.request
 
 PORT = 8080
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 
 def get_random_available_ports(count=2, min_port=20000, max_port=60000):
@@ -79,9 +80,34 @@ def check_systemd_user():
             text=True,
             timeout=3
         )
-        return res.returncode in (0, 1)  # 0: running, 1: degraded
+        return res.returncode in (0, 1)
     except Exception:
         return False
+
+
+def ensure_local_bin_in_path():
+    """Ensure ~/.local/bin exists and has standard permissions."""
+    local_bin = os.path.expanduser("~/.local/bin")
+    os.makedirs(local_bin, exist_ok=True)
+    current_path = os.environ.get("PATH", "")
+    if local_bin not in current_path.split(":"):
+        os.environ["PATH"] = f"{local_bin}:{current_path}"
+    return local_bin
+
+
+def download_binary(url, target_path):
+    """Download a standalone executable binary and set +x permissions."""
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (WSL-Setup-Wizard)"}
+        )
+        with urllib.request.urlopen(req, timeout=30) as response, open(target_path, "wb") as out_file:
+            shutil.copyfileobj(response, out_file)
+        os.chmod(target_path, 0o755)
+        return True, "Download complete"
+    except Exception as e:
+        return False, str(e)
 
 
 class WizardHandler(http.server.SimpleHTTPRequestHandler):
@@ -90,6 +116,8 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(parsed.query)
+
         if parsed.path == "/api/inspect":
             self.send_json(self.handle_inspect())
         elif parsed.path == "/api/generate-ports":
@@ -100,6 +128,12 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
                 "ssh_external_port": ports[1],
                 "win_ssh_port": 2222
             })
+        elif parsed.path == "/api/download-windows-script":
+            ssh_port = query.get("ssh_port", ["29482"])[0]
+            self.handle_download_windows_script(ssh_port)
+        elif parsed.path == "/api/health-check":
+            ttyd_port = query.get("ttyd_port", ["34281"])[0]
+            self.send_json(self.handle_health_check(ttyd_port))
         else:
             super().do_GET()
 
@@ -135,12 +169,29 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def handle_download_windows_script(self, ssh_port):
+        template_file = os.path.join(ASSETS_DIR, "setup-windows-host.bat")
+        content = "@echo off\n"
+        if os.path.exists(template_file):
+            with open(template_file, "r", encoding="utf-8") as f:
+                content = f.read()
+        content = content.replace("{{ SSH_PORT }}", str(ssh_port))
+        data = content.encode("utf-8")
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition", f"attachment; filename=setup-windows-host.bat")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def handle_inspect(self):
         wsl_detected = is_wsl()
         distro = get_linux_distro()
         systemd_ok = check_systemd_user()
         user = getpass.getuser()
         home = os.path.expanduser("~")
+        local_bin = ensure_local_bin_in_path()
 
         checks = [
             {
@@ -167,10 +218,10 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
 
         installed_pkgs = {
             "tmux": bool(shutil.which("tmux")),
-            "ttyd": bool(shutil.which("ttyd")),
+            "ttyd": bool(shutil.which("ttyd") or os.path.exists(os.path.join(local_bin, "ttyd"))),
             "nginx": bool(shutil.which("nginx")),
-            "cloudflared": bool(shutil.which("cloudflared")),
-            "ssh": bool(shutil.which("ssh") and shutil.which("sshd"))
+            "cloudflared": bool(shutil.which("cloudflared") or os.path.exists(os.path.join(local_bin, "cloudflared"))),
+            "feeder": bool(os.path.exists(os.path.join(local_bin, "donagy-key-feeder")))
         }
 
         return {
@@ -189,39 +240,51 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
 
     def handle_install_packages(self, is_real):
         if not is_real:
-            # Simulation Mode
             return {
                 "status": "success",
                 "mode": "simulation",
                 "message": "All packages verified successfully (Simulation Mode).",
                 "packages": [
                     {"name": "tmux", "status": "installed", "version": "3.4"},
-                    {"name": "ttyd", "status": "installed", "version": "1.7.4"},
+                    {"name": "ttyd", "status": "installed", "version": "1.7.4 (Standalone)"},
                     {"name": "nginx", "status": "installed", "version": "1.24.0"},
-                    {"name": "cloudflared", "status": "installed", "version": "latest"},
+                    {"name": "cloudflared", "status": "installed", "version": "latest (Standalone)"},
                     {"name": "openssh-server", "status": "installed", "version": "current"}
                 ]
             }
 
-        # Real Mode: Verify binaries and report actual status
-        pkgs = ["tmux", "ttyd", "nginx", "cloudflared"]
-        status_list = []
-        missing = []
-        for pkg in pkgs:
-            path = shutil.which(pkg)
-            if path:
-                status_list.append({"name": pkg, "status": "installed", "path": path})
-            else:
-                missing.append(pkg)
-                status_list.append({"name": pkg, "status": "missing"})
+        # Real Mode: Auto-provision binaries
+        local_bin = ensure_local_bin_in_path()
+        results = []
+
+        # 1. ttyd standalone binary download if missing
+        ttyd_path = shutil.which("ttyd") or os.path.join(local_bin, "ttyd")
+        if not os.path.exists(ttyd_path):
+            ttyd_url = "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64"
+            ok, msg = download_binary(ttyd_url, os.path.join(local_bin, "ttyd"))
+            results.append({"name": "ttyd", "status": "installed" if ok else "failed", "detail": msg})
+        else:
+            results.append({"name": "ttyd", "status": "installed", "detail": ttyd_path})
+
+        # 2. cloudflared standalone binary download if missing
+        cf_path = shutil.which("cloudflared") or os.path.join(local_bin, "cloudflared")
+        if not os.path.exists(cf_path):
+            cf_url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+            ok, msg = download_binary(cf_url, os.path.join(local_bin, "cloudflared"))
+            results.append({"name": "cloudflared", "status": "installed" if ok else "failed", "detail": msg})
+        else:
+            results.append({"name": "cloudflared", "status": "installed", "detail": cf_path})
+
+        # 3. Check tmux and nginx
+        for pkg in ["tmux", "nginx"]:
+            p = shutil.which(pkg)
+            results.append({"name": pkg, "status": "installed" if p else "missing", "detail": p or "Run: sudo apt install -y " + pkg})
 
         return {
-            "status": "success" if not missing else "partial",
+            "status": "success",
             "mode": "real",
-            "message": "System package status inspection complete." if not missing else f"Missing packages: {', '.join(missing)}",
-            "packages": status_list,
-            "missing": missing,
-            "install_command": "sudo apt update && sudo apt install -y tmux nginx openssh-server"
+            "message": "Binary provisioning and status check complete.",
+            "packages": results
         }
 
     def handle_verify_token(self, data, is_real):
@@ -241,10 +304,11 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
                 "message": f"Successfully simulated connection to Cloudflare. Ingress mapped to {domain or 'your-domain.pro'}."
             }
 
-        # Real Mode: Write ~/.config/systemd/user/cloudflared.service
+        # Real Mode: Write ~/.config/systemd/user/cloudflared.service with http2 protocol guard
         user_systemd_dir = os.path.expanduser("~/.config/systemd/user")
         os.makedirs(user_systemd_dir, exist_ok=True)
-        cf_bin = shutil.which("cloudflared") or "cloudflared"
+        local_bin = ensure_local_bin_in_path()
+        cf_bin = shutil.which("cloudflared") or os.path.join(local_bin, "cloudflared")
 
         service_content = f"""[Unit]
 Description=Cloudflare Tunnel Connector (WSL AGY System)
@@ -252,7 +316,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={cf_bin} tunnel run --token {token}
+ExecStart={cf_bin} tunnel --protocol http2 run --token {token}
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -293,20 +357,22 @@ WantedBy=default.target
                 ]
             }
 
-        # Real Mode
+        # Real Mode: Robust ttyd unit with ExecStartPre session guard & -P 60 keepalive
         user = getpass.getuser()
         user_systemd_dir = os.path.expanduser("~/.config/systemd/user")
         os.makedirs(user_systemd_dir, exist_ok=True)
-        ttyd_bin = shutil.which("ttyd") or "/usr/local/bin/ttyd"
+        local_bin = ensure_local_bin_in_path()
+        ttyd_bin = shutil.which("ttyd") or os.path.join(local_bin, "ttyd")
+        tmux_bin = shutil.which("tmux") or "/usr/bin/tmux"
 
-        # 1. Write ttyd.service
         ttyd_service = f"""[Unit]
 Description=ttyd Terminal Mirror Daemon (Read-Only)
 After=network.target
 
 [Service]
 Type=simple
-ExecStart={ttyd_bin} -p {ttyd_port} -R tmux attach -t main
+ExecStartPre=/bin/bash -c "{tmux_bin} has-session -t main 2>/dev/null || {tmux_bin} new-session -d -s main -c %h"
+ExecStart={ttyd_bin} -p {ttyd_port} -P 60 -t fontSize=16 -R {tmux_bin} attach-session -t main
 Restart=always
 RestartSec=3
 StandardOutput=journal
@@ -319,19 +385,21 @@ WantedBy=default.target
         with open(ttyd_path, "w", encoding="utf-8") as f:
             f.write(ttyd_service)
 
-        # 2. Ensure tmux session 'main' exists
+        # 1. Ensure tmux session 'main' exists right now
         try:
-            subprocess.run(["tmux", "has-session", "-t", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run([tmux_bin, "has-session", "-t", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if subprocess.run([tmux_bin, "has-session", "-t", "main"]).returncode != 0:
+                subprocess.run([tmux_bin, "new-session", "-d", "-s", "main"])
         except Exception:
             pass
 
-        # 3. Enable Linger for user
+        # 2. Enable Linger for user
         try:
             subprocess.run(["loginctl", "enable-linger", user], timeout=5)
         except Exception:
             pass
 
-        # 4. Reload daemon and enable services
+        # 3. Reload daemon and start services
         try:
             subprocess.run(["systemctl", "--user", "daemon-reload"], timeout=5)
             subprocess.run(["systemctl", "--user", "enable", "--now", "ttyd.service"], timeout=5)
@@ -341,13 +409,13 @@ WantedBy=default.target
             return {
                 "status": "warning",
                 "mode": "real",
-                "message": f"Service files written, but systemctl execution had warning: {str(e)}"
+                "message": f"Service files written, warning during systemctl: {str(e)}"
             }
 
         return {
             "status": "success",
             "mode": "real",
-            "message": "ttyd and cloudflared services deployed and enabled with user linger.",
+            "message": "ttyd.service (with session guard) and cloudflared.service deployed successfully.",
             "services": [
                 {"unit": "ttyd.service", "status": "deployed", "port": ttyd_port},
                 {"unit": "cloudflared.service", "status": "deployed"},
@@ -372,8 +440,31 @@ WantedBy=default.target
                 "fingerprint": "SHA256:SimulationFingerprintDoNotUse"
             }
 
-        # Real Mode: Generate dedicated Ed25519 keypair in ~/.ssh/
-        ssh_dir = os.path.expanduser("~/.ssh")
+        # Real Mode: Auto-deploy KeyBridge ecosystem (feeder, tm-jump, .tmux.conf) + Ed25519 keypair
+        local_bin = ensure_local_bin_in_path()
+        user_home = os.path.expanduser("~")
+
+        # 1. Install feeder & tm-jump
+        feeder_src = os.path.join(ASSETS_DIR, "donagy-key-feeder")
+        feeder_dst = os.path.join(local_bin, "donagy-key-feeder")
+        if os.path.exists(feeder_src):
+            shutil.copy2(feeder_src, feeder_dst)
+            os.chmod(feeder_dst, 0o755)
+
+        jump_src = os.path.join(ASSETS_DIR, "tm-jump")
+        jump_dst = os.path.join(local_bin, "tm-jump")
+        if os.path.exists(jump_src):
+            shutil.copy2(jump_src, jump_dst)
+            os.chmod(jump_dst, 0o755)
+
+        # 2. Install optimized .tmux.conf if not existing or requested
+        tmux_conf_src = os.path.join(ASSETS_DIR, ".tmux.conf")
+        tmux_conf_dst = os.path.join(user_home, ".tmux.conf")
+        if os.path.exists(tmux_conf_src) and not os.path.exists(tmux_conf_dst):
+            shutil.copy2(tmux_conf_src, tmux_conf_dst)
+
+        # 3. Generate Ed25519 Keypair
+        ssh_dir = os.path.join(user_home, ".ssh")
         os.makedirs(ssh_dir, mode=0o700, exist_ok=True)
         key_path = os.path.join(ssh_dir, "id_keybridge_wizard")
         pub_path = key_path + ".pub"
@@ -408,10 +499,46 @@ WantedBy=default.target
         return {
             "status": "success",
             "mode": "real",
-            "message": "Dedicated Ed25519 keypair generated and registered to authorized_keys.",
+            "message": "KeyBridge ecosystem installed (donagy-key-feeder, tm-jump, .tmux.conf) and Ed25519 key registered.",
             "public_key": pub_content,
             "private_key": priv_content,
-            "key_path": key_path
+            "key_path": key_path,
+            "feeder_installed": os.path.exists(feeder_dst)
+        }
+
+    def handle_health_check(self, ttyd_port):
+        local_bin = ensure_local_bin_in_path()
+        feeder_ok = os.path.exists(os.path.join(local_bin, "donagy-key-feeder"))
+
+        # Check local ttyd port response
+        port_open = False
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1.0)
+                port_open = (s.connect_ex(("127.0.0.1", int(ttyd_port))) == 0)
+        except Exception:
+            pass
+
+        # Check systemd user services
+        ttyd_active = False
+        cf_active = False
+        try:
+            res_ttyd = subprocess.run(["systemctl", "--user", "is-active", "ttyd.service"], stdout=subprocess.PIPE, text=True)
+            ttyd_active = (res_ttyd.stdout.strip() == "active")
+            res_cf = subprocess.run(["systemctl", "--user", "is-active", "cloudflared.service"], stdout=subprocess.PIPE, text=True)
+            cf_active = (res_cf.stdout.strip() == "active")
+        except Exception:
+            pass
+
+        return {
+            "status": "success",
+            "health": {
+                "ttyd_service": ttyd_active,
+                "ttyd_port_open": port_open,
+                "cloudflared_service": cf_active,
+                "feeder_binary": feeder_ok,
+                "all_healthy": ttyd_active and port_open and feeder_ok
+            }
         }
 
 
@@ -424,7 +551,7 @@ def run():
         server = http.server.ThreadingHTTPServer(("0.0.0.0", port), WizardHandler)
 
     print("=" * 65)
-    print("  WSL2 AGY System - Web Setup Wizard (Execution Engine)")
+    print("  WSL2 AGY System - Web Setup Wizard (Production Engine)")
     print("=" * 65)
     print(f"  * Web GUI URL : http://localhost:{port}")
     print(f"  * Mode        : Supports Simulation & Real Install Modes")

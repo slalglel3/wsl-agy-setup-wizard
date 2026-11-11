@@ -18,9 +18,16 @@ function initEventListeners() {
     updateModeUI();
   });
 
-  // Step 2: Random port generators
+  // Step 2: Random port generators & script download
   document.getElementById("btn-re-random").addEventListener("click", generateRandomPorts);
   document.getElementById("btn-re-random-ssh").addEventListener("click", generateRandomPorts);
+  const btnDownloadBat = document.getElementById("btn-download-bat");
+  if (btnDownloadBat) {
+    btnDownloadBat.addEventListener("click", () => {
+      const sshPort = document.getElementById("input-ssh-port").value || "29482";
+      window.location.href = `/api/download-windows-script?ssh_port=${sshPort}`;
+    });
+  }
 
   // Step 3: Install / Check packages
   document.getElementById("btn-simulate-install").addEventListener("click", executePackageCheckOrInstall);

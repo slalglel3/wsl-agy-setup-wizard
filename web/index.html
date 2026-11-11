@@ -120,8 +120,11 @@
 
           <div class="code-snippet-box">
             <div class="code-header">
-              <span>Windows 호스트 자동 포트포워딩 명령 (PowerShell/CMD 관리자)</span>
-              <button class="btn-copy" onclick="copySnippet('cmd-portproxy')">📋 명령 복사</button>
+              <span>Windows 호스트 자동 포트포워딩 & 방화벽 등록</span>
+              <div style="display:flex; gap:8px;">
+                <button class="btn-copy" id="btn-download-bat">📥 원클릭 배치파일 다운로드 (.bat)</button>
+                <button class="btn-copy" onclick="copySnippet('cmd-portproxy')">📋 명령 복사</button>
+              </div>
             </div>
             <pre id="cmd-portproxy"><code>netsh interface portproxy add v4tov4 listenport=29482 listenaddress=0.0.0.0 connectport=22 connectaddress=127.0.0.1</code></pre>
           </div>

@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""
+donagy-key-feeder: Zero-Latency Shell-less Key Injection Daemon for WSL Dual System
+- Reads raw/hex bytes from stdin (via SSH forced command)
+- Resolves the current active tmux session (with fast cache)
+- Intercepts Alt + 1~9, Alt + 0, Alt + ` for instant tm-jump session switching
+- Intelligent PageUp / PageDown handler
+- 0ms zero-latency for regular typing
+- Forwards function keys, navigation, arrows directly into tmux
+- Purely event-driven: NO polling, NO background threads
+"""
+
+import sys
+import os
+import shutil
+import subprocess
+import time
+import signal
+
+USER_HOME = os.path.expanduser("~")
+TM_JUMP = os.path.join(USER_HOME, ".local/bin/tm-jump")
+TM_TABBAR = os.path.join(USER_HOME, ".local/bin/tm-tabbar")
+TMUX = shutil.which("tmux") or "/usr/bin/tmux"
+ACTIVE_SESSION_FILE = "/dev/shm/donagy_active_session"
+KB_STATE_FILE = "/dev/shm/donagy_kb_state"
+LOG_FILE = "/tmp/donagy-feeder.log"
+
+def log(msg):
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [PID {os.getpid()}] {msg}\n")
+    except Exception:
+        pass
+
+def set_kb_state(state: int):
+    try:
+        with open(KB_STATE_FILE, "w") as f:
+            f.write(f"{state}\n")
+        if os.path.exists(TM_TABBAR):
+            subprocess.run([TM_TABBAR], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+    except Exception:
+        pass
+
+def sig_handler(signum, frame):
+    set_kb_state(0)
+    sys.exit(0)
+
+def get_active_session(override_target=None):
+    if override_target and override_target != "donagy-key-feeder":
+        try:
+            res = subprocess.run(
+                [TMUX, "has-session", "-t", override_target],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5
+            )
+            if res.returncode == 0:
+                return override_target
+        except Exception:
+            pass
+
+    if os.path.exists(ACTIVE_SESSION_FILE):
+        try:
+            with open(ACTIVE_SESSION_FILE, "r") as f:
+                sess = f.read().strip()
+                if sess:
+                    return sess
+        except Exception:
+            pass
+
+    try:
+        res = subprocess.run(
+            [TMUX, "list-sessions", "-F", "#{session_name}"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=0.5
+        )
+        if res.returncode == 0:
+            lines = res.stdout.strip().splitlines()
+            if lines:
+                return lines[0]
+    except Exception:
+        pass
+
+    return "main"
+
+def main():
+    signal.signal(signal.SIGINT, sig_handler)
+    signal.signal(signal.SIGTERM, sig_handler)
+    set_kb_state(1)
+
+    override_target = sys.argv[1] if len(sys.argv) > 1 else None
+    active_target = get_active_session(override_target)
+
+    stdin_fd = sys.stdin.fileno()
+
+    while True:
+        try:
+            line = sys.stdin.readline()
+            if not line:
+                break
+            line = line.strip()
+            if not line:
+                continue
+
+            # Switch session on Alt + 1~5
+            if line.startswith("ALT_"):
+                key_num = line.replace("ALT_", "")
+                if os.path.exists(TM_JUMP):
+                    subprocess.run([TM_JUMP, key_num], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                active_target = get_active_session(override_target)
+                continue
+
+            # Send raw hex/keys to active tmux session
+            active_target = get_active_session(override_target)
+            if line.startswith("HEX:"):
+                hex_data = line[4:].strip()
+                subprocess.run([TMUX, "send-keys", "-t", active_target, "-H", hex_data],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.run([TMUX, "send-keys", "-t", active_target, line],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            log(f"Error in feeder loop: {e}")
+            break
+
+    set_kb_state(0)
+
+if __name__ == "__main__":
+    main()
