@@ -252,7 +252,7 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
         installed_pkgs = {
             "tmux": bool(shutil.which("tmux")),
             "ttyd": bool(shutil.which("ttyd") or os.path.exists(os.path.join(local_bin, "ttyd"))),
-            "nginx": bool(shutil.which("nginx")),
+            "openssh": bool(shutil.which("sshd")),
             "cloudflared": bool(shutil.which("cloudflared") or os.path.exists(os.path.join(local_bin, "cloudflared"))),
             "feeder": bool(os.path.exists(os.path.join(local_bin, "donagy-key-feeder")))
         }
@@ -281,7 +281,7 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
                 "packages": [
                     {"name": "tmux", "status": "installed", "version": "3.4"},
                     {"name": "ttyd", "status": "installed", "version": "1.7.4 (Standalone)"},
-                    {"name": "nginx", "status": "installed", "version": "1.24.0"},
+                    {"name": "openssh-server", "status": "installed", "version": "1:9.6p1"},
                     {"name": "cloudflared", "status": "installed", "version": "latest (Standalone)"},
                     {"name": "donagy-key-feeder", "status": "installed", "version": "v1.04"}
                 ]

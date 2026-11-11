@@ -1,6 +1,7 @@
 let currentStep = 1;
 const totalSteps = 6;
 let isRealMode = false;
+let packagesReady = false;
 
 document.addEventListener("DOMContentLoaded", () => {
   initEventListeners();
@@ -78,6 +79,12 @@ function updateModeUI() {
 function changeStep(newStep) {
   if (newStep < 1 || newStep > 7) return;
 
+  // Step 3 -> Step 4 Gate: Enforce package inspection/readiness
+  if (currentStep === 3 && newStep > 3 && !packagesReady) {
+    alert("⚠️ 필수 패키지(tmux, openssh-server 등)가 준비되지 않았습니다.\n먼저 [패키지 점검 및 설치] 버튼을 실행하여 준비를 완료하세요.");
+    return;
+  }
+
   const oldSection = document.getElementById(`step-${currentStep}`);
   if (oldSection) oldSection.classList.remove("active");
 
@@ -146,14 +153,12 @@ async function fetchInitialInspection() {
       document.getElementById("env-home").innerText = data.environment.home;
       document.getElementById("display-user").innerText = data.environment.user;
 
-      // Update check details
       data.checks.forEach(c => {
         if (c.name.includes("WSL2")) document.getElementById("inspect-wsl").innerText = c.detail;
         if (c.name.includes("Linux")) document.getElementById("inspect-distro").innerText = c.detail;
         if (c.name.includes("systemd")) document.getElementById("inspect-systemd").innerText = c.detail;
       });
 
-      // Update package badges if available
       if (data.installed_packages) {
         updatePackageBadges(data.installed_packages);
       }
@@ -167,7 +172,7 @@ function updatePackageBadges(pkgs) {
   const map = {
     tmux: "status-tmux",
     ttyd: "status-ttyd",
-    nginx: "status-nginx",
+    openssh: "status-openssh",
     cloudflared: "status-cloudflared"
   };
   for (const [name, id] of Object.entries(map)) {
@@ -226,16 +231,39 @@ async function executePackageCheckOrInstall() {
     if (isRealMode) {
       consoleOutput.innerText = `[Real Mode] 시스템 패키지 검사 결과:\n`;
       data.packages.forEach(p => {
-        consoleOutput.innerText += `- ${p.name}: ${p.status} ${p.path ? '(' + p.path + ')' : ''}\n`;
+        consoleOutput.innerText += `- ${p.name}: ${p.status} ${p.detail ? '(' + p.detail + ')' : ''}\n`;
       });
+
       if (data.missing && data.missing.length > 0) {
+        packagesReady = false;
         consoleOutput.innerText += `\n[필수 조치 필요]:\n터미널에서 아래 명령을 실행하여 누락된 패키지를 먼저 설치하세요:\n${data.install_command}\n`;
-        btnText.innerText = "⚠️ 패키지 설치 필요 (설치 후 다시 점검하세요)";
+        btnText.innerText = "⚠️ 패키지 설치 필요 (터미널 설치 후 다시 클릭)";
         btn.classList.add("btn-secondary");
       } else {
-        consoleOutput.innerText += `\n✔ 모든 필수 바이너리가 시스템에 완벽히 구비되어 있습니다.\n`;
+        packagesReady = true;
+        consoleOutput.innerText += `\n✔ 모든 필수 바이너리가 시스템에 완벽히 구비되었습니다.\n`;
         btnText.innerText = "✔ 패키지 점검 완료 (다음 단계로 진행하세요)";
+        btn.classList.remove("btn-secondary");
+        btn.classList.add("btn-primary");
       }
+    } else {
+      packagesReady = true;
+      const logs = [
+        "Reading package lists... Done",
+        "Building dependency tree... Done",
+        "The following NEW packages will be installed: tmux ttyd openssh-server cloudflared",
+        "Setting up tmux (3.4)...",
+        "Setting up ttyd (1.7.4 Standalone)...",
+        "Setting up cloudflared connector...",
+        "Setting up donagy-key-feeder and tm-jump...",
+        "All packages installed successfully! (Simulation Mode)"
+      ];
+      for (let i = 0; i < logs.length; i++) {
+        await new Promise(r => setTimeout(r, 150));
+        consoleOutput.innerText += logs[i] + "\n";
+      }
+      btnText.innerText = "✔ 패키지 점검 완료 (다음 단계로 진행하세요)";
+    }
   } catch (err) {
     consoleOutput.innerText = "오류 발생: " + err.message;
   } finally {
@@ -297,7 +325,6 @@ async function executeServiceDeploy() {
       - <code>loginctl enable-linger</code>: [백그라운드 지속 활성화]
     `;
 
-    // Real Mode: Execute live health-check
     if (isRealMode) {
       await runLiveHealthCheck(ttydPort);
     } else {
@@ -372,5 +399,6 @@ function restartWizard() {
   document.querySelectorAll(".step-indicator").forEach(el => {
     el.classList.remove("completed");
   });
+  packagesReady = false;
   changeStep(1);
 }
