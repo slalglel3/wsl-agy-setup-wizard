@@ -1,6 +1,6 @@
 @echo off
 :: ==============================================================================
-:: WSL2 AGY Dual-Display System - Windows Host One-Click Setup Script
+:: WSL2 AGY Dual-Display System - Windows Host One-Click Setup Script v2
 :: Must be executed as Administrator!
 :: ==============================================================================
 
@@ -14,7 +14,12 @@ if %errorLevel% neq 0 (
 
 set SSH_PORT={{ SSH_PORT }}
 echo ==============================================================================
-echo [1/3] Detecting WSL2 Internal Virtual IP...
+echo [1/4] Ensuring WSL OpenSSH Server is running...
+echo ==============================================================================
+wsl -e bash -c "sudo service ssh status >/dev/null 2>&1 || sudo service ssh start" >nul 2>&1
+
+echo ==============================================================================
+echo [2/4] Detecting WSL2 Internal Virtual IP...
 echo ==============================================================================
 
 for /f "tokens=1" %%i in ('wsl -e hostname -I 2^>nul') do set WSL_IP=%%i
@@ -29,13 +34,13 @@ echo -> Detected WSL IP: %WSL_IP%
 echo -> Forwarding Port: %SSH_PORT% -> WSL IP:22
 
 echo ==============================================================================
-echo [2/3] Configuring Windows PortProxy (netsh)...
+echo [3/4] Configuring Windows PortProxy (netsh)...
 echo ==============================================================================
 netsh interface portproxy delete v4tov4 listenport=%SSH_PORT% listenaddress=0.0.0.0 >nul 2>&1
 netsh interface portproxy add v4tov4 listenport=%SSH_PORT% listenaddress=0.0.0.0 connectport=22 connectaddress=%WSL_IP%
 
 echo ==============================================================================
-echo [3/3] Adding Windows Defender Inbound Firewall Rule...
+echo [4/4] Adding Windows Defender Inbound Firewall Rule...
 echo ==============================================================================
 netsh advfirewall firewall delete rule name="WSL KeyBridge SSH (%SSH_PORT%)" >nul 2>&1
 netsh advfirewall firewall add rule name="WSL KeyBridge SSH (%SSH_PORT%)" dir=in action=allow protocol=TCP localport=%SSH_PORT% >nul
@@ -43,5 +48,8 @@ netsh advfirewall firewall add rule name="WSL KeyBridge SSH (%SSH_PORT%)" dir=in
 echo ==============================================================================
 echo [SUCCESS] Windows Host PortProxy and Firewall configuration complete!
 echo KeyBridge mobile app can now connect directly via port %SSH_PORT%.
+echo.
+echo [TIP] To keep PortProxy updated on Windows reboot, a Scheduled Task
+echo can be registered to run this script at logon.
 echo ==============================================================================
 pause

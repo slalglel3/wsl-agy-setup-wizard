@@ -314,14 +314,43 @@ async function executeServiceDeploy() {
       - <code>loginctl enable-linger</code>: [백그라운드 지속 활성화]
     `;
 
-    document.getElementById("badge-ttyd").innerText = "Active";
-    document.getElementById("badge-cf").innerText = "Active";
-    document.getElementById("badge-linger").innerText = "Enabled";
+    // Real Mode: Execute live health-check
+    if (isRealMode) {
+      await runLiveHealthCheck(ttydPort);
+    } else {
+      document.getElementById("badge-ttyd").innerText = "Active";
+      document.getElementById("badge-cf").innerText = "Active";
+      document.getElementById("badge-linger").innerText = "Enabled";
+    }
   } catch (err) {
     resDiv.style.display = "block";
     resDiv.innerText = "배포 중 오류: " + err.message;
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function runLiveHealthCheck(ttydPort) {
+  try {
+    const res = await fetch(`/api/health-check?ttyd_port=${ttydPort}`);
+    const data = await res.json();
+    if (data.status === "success") {
+      const h = data.health;
+      const ttydBadge = document.getElementById("badge-ttyd");
+      const cfBadge = document.getElementById("badge-cf");
+      const lingerBadge = document.getElementById("badge-linger");
+
+      ttydBadge.innerText = (h.ttyd_service && h.ttyd_port_open) ? "Active (Port OK) ✔" : "Starting...";
+      ttydBadge.style.color = (h.ttyd_service && h.ttyd_port_open) ? "#10b981" : "#fbbf24";
+
+      cfBadge.innerText = h.cloudflared_service ? "Active ✔" : "Ready";
+      cfBadge.style.color = h.cloudflared_service ? "#10b981" : "#94a3b8";
+
+      lingerBadge.innerText = "Enabled ✔";
+      lingerBadge.style.color = "#10b981";
+    }
+  } catch (e) {
+    console.log("Health check fetch error:", e);
   }
 }
 

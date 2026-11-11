@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WSL2 AGY System - Web Setup Wizard (Production-Ready Execution Engine)
+WSL2 AGY System - Web Setup Wizard (Production-Ready Execution Engine v2)
 Pure Python 3 Standard Library - Zero external dependencies.
 """
 
@@ -108,6 +108,39 @@ def download_binary(url, target_path):
         return True, "Download complete"
     except Exception as e:
         return False, str(e)
+
+
+def deploy_assets_bundle(local_bin, user_home):
+    """Deploy donagy-key-feeder, tm-jump and merge .tmux.conf."""
+    os.makedirs(local_bin, exist_ok=True)
+
+    # 1. donagy-key-feeder
+    feeder_src = os.path.join(ASSETS_DIR, "donagy-key-feeder")
+    feeder_dst = os.path.join(local_bin, "donagy-key-feeder")
+    if os.path.exists(feeder_src):
+        shutil.copy2(feeder_src, feeder_dst)
+        os.chmod(feeder_dst, 0o755)
+
+    # 2. tm-jump
+    jump_src = os.path.join(ASSETS_DIR, "tm-jump")
+    jump_dst = os.path.join(local_bin, "tm-jump")
+    if os.path.exists(jump_src):
+        shutil.copy2(jump_src, jump_dst)
+        os.chmod(jump_dst, 0o755)
+
+    # 3. .tmux.conf safe merge
+    tmux_conf_src = os.path.join(ASSETS_DIR, ".tmux.conf")
+    tmux_conf_dst = os.path.join(user_home, ".tmux.conf")
+    if os.path.exists(tmux_conf_src):
+        if not os.path.exists(tmux_conf_dst):
+            shutil.copy2(tmux_conf_src, tmux_conf_dst)
+        else:
+            # Check if keybindings are present, if not append
+            with open(tmux_conf_dst, "r", encoding="utf-8") as f:
+                content = f.read()
+            if "tm-jump" not in content:
+                with open(tmux_conf_src, "r", encoding="utf-8") as sf, open(tmux_conf_dst, "a", encoding="utf-8") as df:
+                    df.write("\n# === WSL AGY Setup Wizard Configurations ===\n" + sf.read())
 
 
 class WizardHandler(http.server.SimpleHTTPRequestHandler):
@@ -232,6 +265,7 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
                 "systemd": "Enabled (Active)" if systemd_ok else "Disabled",
                 "user": user,
                 "home": home,
+                "arch": platform.machine(),
                 "python_version": platform.python_version()
             },
             "installed_packages": installed_pkgs,
@@ -249,42 +283,70 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
                     {"name": "ttyd", "status": "installed", "version": "1.7.4 (Standalone)"},
                     {"name": "nginx", "status": "installed", "version": "1.24.0"},
                     {"name": "cloudflared", "status": "installed", "version": "latest (Standalone)"},
-                    {"name": "openssh-server", "status": "installed", "version": "current"}
+                    {"name": "donagy-key-feeder", "status": "installed", "version": "v1.04"}
                 ]
             }
 
-        # Real Mode: Auto-provision binaries
+        # Real Mode: Multi-arch standalone binary download & asset bundling
         local_bin = ensure_local_bin_in_path()
-        results = []
+        user_home = os.path.expanduser("~")
+        deploy_assets_bundle(local_bin, user_home)
 
-        # 1. ttyd standalone binary download if missing
+        arch = platform.machine().lower()
+        is_arm = "aarch64" in arch or "arm" in arch
+        results = []
+        has_failure = False
+
+        # 1. ttyd standalone binary download
         ttyd_path = shutil.which("ttyd") or os.path.join(local_bin, "ttyd")
         if not os.path.exists(ttyd_path):
-            ttyd_url = "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.x86_64"
+            ttyd_arch = "aarch64" if is_arm else "x86_64"
+            ttyd_url = f"https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.{ttyd_arch}"
             ok, msg = download_binary(ttyd_url, os.path.join(local_bin, "ttyd"))
+            if not ok:
+                has_failure = True
             results.append({"name": "ttyd", "status": "installed" if ok else "failed", "detail": msg})
         else:
             results.append({"name": "ttyd", "status": "installed", "detail": ttyd_path})
 
-        # 2. cloudflared standalone binary download if missing
+        # 2. cloudflared standalone binary download
         cf_path = shutil.which("cloudflared") or os.path.join(local_bin, "cloudflared")
         if not os.path.exists(cf_path):
-            cf_url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+            cf_arch = "arm64" if is_arm else "amd64"
+            cf_url = f"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-{cf_arch}"
             ok, msg = download_binary(cf_url, os.path.join(local_bin, "cloudflared"))
+            if not ok:
+                has_failure = True
             results.append({"name": "cloudflared", "status": "installed" if ok else "failed", "detail": msg})
         else:
             results.append({"name": "cloudflared", "status": "installed", "detail": cf_path})
 
-        # 3. Check tmux and nginx
+        # 3. Check system apt binaries (tmux, nginx, sshd)
+        missing_apt = []
         for pkg in ["tmux", "nginx"]:
             p = shutil.which(pkg)
-            results.append({"name": pkg, "status": "installed" if p else "missing", "detail": p or "Run: sudo apt install -y " + pkg})
+            if p:
+                results.append({"name": pkg, "status": "installed", "detail": p})
+            else:
+                missing_apt.append(pkg)
+                results.append({"name": pkg, "status": "missing", "detail": "Run: sudo apt install -y " + pkg})
 
+        # 4. Feeder asset status
+        feeder_ok = os.path.exists(os.path.join(local_bin, "donagy-key-feeder"))
+        results.append({
+            "name": "donagy-key-feeder",
+            "status": "installed" if feeder_ok else "missing",
+            "detail": os.path.join(local_bin, "donagy-key-feeder")
+        })
+
+        status_flag = "error" if has_failure else ("partial" if missing_apt else "success")
         return {
-            "status": "success",
+            "status": status_flag,
             "mode": "real",
-            "message": "Binary provisioning and status check complete.",
-            "packages": results
+            "message": "Binary provisioning complete." if status_flag == "success" else "Some packages require attention.",
+            "packages": results,
+            "missing": missing_apt,
+            "install_command": "sudo apt update && sudo apt install -y tmux nginx openssh-server"
         }
 
     def handle_verify_token(self, data, is_real):
@@ -387,8 +449,7 @@ WantedBy=default.target
 
         # 1. Ensure tmux session 'main' exists right now
         try:
-            subprocess.run([tmux_bin, "has-session", "-t", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if subprocess.run([tmux_bin, "has-session", "-t", "main"]).returncode != 0:
+            if subprocess.run([tmux_bin, "has-session", "-t", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
                 subprocess.run([tmux_bin, "new-session", "-d", "-s", "main"])
         except Exception:
             pass
@@ -440,30 +501,11 @@ WantedBy=default.target
                 "fingerprint": "SHA256:SimulationFingerprintDoNotUse"
             }
 
-        # Real Mode: Auto-deploy KeyBridge ecosystem (feeder, tm-jump, .tmux.conf) + Ed25519 keypair
+        # Real Mode: Generate dedicated Ed25519 keypair and register with Forced Command for KeyBridge
         local_bin = ensure_local_bin_in_path()
         user_home = os.path.expanduser("~")
+        deploy_assets_bundle(local_bin, user_home)
 
-        # 1. Install feeder & tm-jump
-        feeder_src = os.path.join(ASSETS_DIR, "donagy-key-feeder")
-        feeder_dst = os.path.join(local_bin, "donagy-key-feeder")
-        if os.path.exists(feeder_src):
-            shutil.copy2(feeder_src, feeder_dst)
-            os.chmod(feeder_dst, 0o755)
-
-        jump_src = os.path.join(ASSETS_DIR, "tm-jump")
-        jump_dst = os.path.join(local_bin, "tm-jump")
-        if os.path.exists(jump_src):
-            shutil.copy2(jump_src, jump_dst)
-            os.chmod(jump_dst, 0o755)
-
-        # 2. Install optimized .tmux.conf if not existing or requested
-        tmux_conf_src = os.path.join(ASSETS_DIR, ".tmux.conf")
-        tmux_conf_dst = os.path.join(user_home, ".tmux.conf")
-        if os.path.exists(tmux_conf_src) and not os.path.exists(tmux_conf_dst):
-            shutil.copy2(tmux_conf_src, tmux_conf_dst)
-
-        # 3. Generate Ed25519 Keypair
         ssh_dir = os.path.join(user_home, ".ssh")
         os.makedirs(ssh_dir, mode=0o700, exist_ok=True)
         key_path = os.path.join(ssh_dir, "id_keybridge_wizard")
@@ -484,7 +526,10 @@ WantedBy=default.target
         with open(key_path, "r", encoding="utf-8") as f:
             priv_content = f.read()
 
-        # Add to ~/.ssh/authorized_keys
+        # Add to ~/.ssh/authorized_keys with FORCED COMMAND for donagy-key-feeder
+        feeder_bin = os.path.join(local_bin, "donagy-key-feeder")
+        forced_entry = f'command="{feeder_bin}",no-pty,no-X11-forwarding,no-port-forwarding {pub_content}'
+
         auth_keys = os.path.join(ssh_dir, "authorized_keys")
         existing_keys = ""
         if os.path.exists(auth_keys):
@@ -493,17 +538,23 @@ WantedBy=default.target
 
         if pub_content not in existing_keys:
             with open(auth_keys, "a", encoding="utf-8") as f:
-                f.write(f"\n{pub_content}\n")
+                f.write(f"\n{forced_entry}\n")
         os.chmod(auth_keys, 0o600)
+
+        # Ensure sshd is running if possible
+        try:
+            subprocess.run(["sudo", "-n", "service", "ssh", "start"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
 
         return {
             "status": "success",
             "mode": "real",
-            "message": "KeyBridge ecosystem installed (donagy-key-feeder, tm-jump, .tmux.conf) and Ed25519 key registered.",
+            "message": "KeyBridge ecosystem (donagy-key-feeder forced command) and Ed25519 key registered.",
             "public_key": pub_content,
             "private_key": priv_content,
             "key_path": key_path,
-            "feeder_installed": os.path.exists(feeder_dst)
+            "feeder_installed": os.path.exists(feeder_bin)
         }
 
     def handle_health_check(self, ttyd_port):
@@ -530,6 +581,16 @@ WantedBy=default.target
         except Exception:
             pass
 
+        # Check sshd status
+        ssh_active = bool(shutil.which("ssh"))
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1.0)
+                ssh_active = (s.connect_ex(("127.0.0.1", 22)) == 0)
+        except Exception:
+            pass
+
+        all_ok = ttyd_active and port_open and feeder_ok
         return {
             "status": "success",
             "health": {
@@ -537,7 +598,8 @@ WantedBy=default.target
                 "ttyd_port_open": port_open,
                 "cloudflared_service": cf_active,
                 "feeder_binary": feeder_ok,
-                "all_healthy": ttyd_active and port_open and feeder_ok
+                "ssh_port_open": ssh_active,
+                "all_healthy": all_ok
             }
         }
 
@@ -551,7 +613,7 @@ def run():
         server = http.server.ThreadingHTTPServer(("0.0.0.0", port), WizardHandler)
 
     print("=" * 65)
-    print("  WSL2 AGY System - Web Setup Wizard (Production Engine)")
+    print("  WSL2 AGY System - Web Setup Wizard (Production Engine v2)")
     print("=" * 65)
     print(f"  * Web GUI URL : http://localhost:{port}")
     print(f"  * Mode        : Supports Simulation & Real Install Modes")
