@@ -16,27 +16,35 @@
 ```mermaid
 flowchart TD
     subgraph MobileDevice["모바일 (스마트폰 / 태블릿)"]
-        PhysKB["물리 블루투스 키보드"] -->|하드웨어 입력| KeyBridge["Donagy KeyBridge 앱\n(0.1ms 무지연 브릿지)"]
-        Browser["웹 브라우저 (Chrome/Safari)"] -->|실시간 화면 관제| WebScreen["Read-Only 대시보드"]
+        PhysKB["물리 블루투스 키보드"]
+        KeyBridge["Donagy KeyBridge 앱 (0.1ms 무지연 브릿지)"]
+        Browser["웹 브라우저 (Chrome / Safari)"]
+        WebScreen["Read-Only 대시보드"]
+        PhysKB -->|"하드웨어 입력"| KeyBridge
+        Browser -->|"실시간 화면 관제"| WebScreen
     end
 
     subgraph Cloudflare["Cloudflare Edge Network"]
-        Tunnel["Cloudflare Zero Trust Tunnel\n(포트 개방 / IP 노출 없음)"]
+        Tunnel["Cloudflare Zero Trust Tunnel (포트 개방 없음)"]
     end
 
     subgraph HostPC["Windows Host PC"]
-        PortProxy["Windows PortProxy\n(20000~60000 난수 포트)"]
+        PortProxy["Windows PortProxy (난수 고위 포트)"]
     end
 
     subgraph WSL2["WSL2 (Ubuntu Linux)"]
-        SSH["OpenSSH Server\n(Ed25519 인증)"]
-        Tmux["tmux 멀티플렉서\n(agy cli 상시 가동)"]
-        TTYD["ttyd 데몬\n(Read-Only 웹소켓 중계)"]
-        Systemd["systemd (User)\n(loginctl linger 상시 유지)"]
+        SSH["OpenSSH Server (Ed25519 인증)"]
+        Tmux["tmux 멀티플렉서 (agy cli 상시 가동)"]
+        TTYD["ttyd 데몬 (Read-Only 웹소켓 중계)"]
+        Systemd["systemd User (상시 지속)"]
     end
 
-    KeyBridge -->|SSH 연결 (난수 포트)| PortProxy -->|로컬 중계| SSH --> Tmux
-    WebScreen -->|HTTPS 접속| Tunnel --> TTYD -->|세션 미러링| Tmux
+    KeyBridge -->|"SSH 연결"| PortProxy
+    PortProxy -->|"로컬 중계"| SSH
+    SSH --> Tmux
+    WebScreen -->|"HTTPS 접속"| Tunnel
+    Tunnel --> TTYD
+    TTYD -->|"세션 미러링"| Tmux
 ```
 
 ---
