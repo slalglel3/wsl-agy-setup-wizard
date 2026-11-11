@@ -209,6 +209,8 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
             with open(template_file, "r", encoding="utf-8") as f:
                 content = f.read()
         content = content.replace("{{ SSH_PORT }}", str(ssh_port))
+        # Ensure Windows CRLF line endings for maximum batch file compatibility
+        content = content.replace("\r\n", "\n").replace("\n", "\r\n")
         data = content.encode("utf-8")
 
         self.send_response(200)
