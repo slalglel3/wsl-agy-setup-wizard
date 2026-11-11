@@ -141,7 +141,7 @@
           <div class="package-list" id="package-list-container">
             <div class="pkg-item" id="pkg-tmux"><span class="pkg-icon">📦</span><div class="pkg-info"><strong>tmux (v3.4+)</strong><span>터미널 멀티플렉서 & 백그라운드 세션 지속</span></div><span class="pkg-badge ready" id="status-tmux">확인 중</span></div>
             <div class="pkg-item" id="pkg-ttyd"><span class="pkg-icon">📦</span><div class="pkg-info"><strong>ttyd (v1.7+)</strong><span>터미널을 웹소켓 브라우저 화면으로 전송하는 초경량 데몬</span></div><span class="pkg-badge ready" id="status-ttyd">확인 중</span></div>
-            <div class="pkg-item" id="pkg-nginx"><span class="pkg-icon">📦</span><div class="pkg-info"><strong>nginx</strong><span>웹소켓 리버스 프록시 및 Read-Only 버퍼 보안 가드</span></div><span class="pkg-badge ready" id="status-nginx">확인 중</span></div>
+            <div class="pkg-item" id="pkg-openssh"><span class="pkg-icon">📦</span><div class="pkg-info"><strong>openssh-server</strong><span>모바일 KeyBridge 블루투스 키보드 신호 수신 데몬</span></div><span class="pkg-badge ready" id="status-openssh">확인 중</span></div>
             <div class="pkg-item" id="pkg-cloudflared"><span class="pkg-icon">📦</span><div class="pkg-info"><strong>cloudflared</strong><span>포트 개방/공유기 설정 없는 안전한 Zero Trust 인그레스 터널</span></div><span class="pkg-badge ready" id="status-cloudflared">확인 중</span></div>
           </div>
 
@@ -264,8 +264,9 @@
               <h4>모바일 앱 연결 설정 정보</h4>
               <div class="field-copy-group">
                 <span class="field-title">접속 호스트 (Host):</span>
-                <code id="display-host">myagy.example.com</code>
+                <code id="display-host">PC 로컬 IP (예: 192.168.0.x 또는 Tailscale IP)</code>
               </div>
+              <small style="color:#fbbf24; margin-bottom:8px; display:block;">※ 주의: Cloudflare 도메인은 웹 브라우저 관제 전용이며, SSH 포트에는 연결되지 않습니다. 스마트폰과 PC가 같은 Wi-Fi에 있을 때는 PC의 로컬 IP(192.168.x.x)를 입력하세요.</small>
               <div class="field-copy-group">
                 <span class="field-title">SSH 외부 포트:</span>
                 <code id="display-port">29482</code>

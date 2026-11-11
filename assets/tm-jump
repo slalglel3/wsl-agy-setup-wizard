@@ -1,16 +1,90 @@
 #!/usr/bin/env bash
-# tm-jump: Fast session switcher for Donagy KeyBridge
-TARGET_NUM="$1"
+# ==============================================================================
+# tm-jump: High-Speed Tmux Session Switcher (Alt + 1~9, Alt + 0, Alt + ` Toggle)
+# ==============================================================================
+# - Switches client attachments atomically (Mobile + PC Web simultaneously)
+# - Synchronizes /dev/shm/donagy_active_session for instant feeder targeting
+# ==============================================================================
+
+export PATH="${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+ACTION="$1"
 ACTIVE_FILE="/dev/shm/donagy_active_session"
+DESC_FILE="${HOME}/.tmux_sessions.desc"
 
-if [ -z "$TARGET_NUM" ]; then
-    exit 0
-fi
+get_ordered_sessions() {
+    local active_sessions=($(tmux list-sessions -F "#{session_name}" 2>/dev/null || true))
+    [ ${#active_sessions[@]} -eq 0 ] && return 0
 
-SESSIONS=($(tmux list-sessions -F "#{session_name}" 2>/dev/null))
-IDX=$((TARGET_NUM - 1))
+    local ordered=()
+    if [ -f "$DESC_FILE" ]; then
+        while IFS='|:' read -r sname _ || [ -n "$sname" ]; do
+            [[ -z "$sname" || "$sname" =~ ^[[:space:]]*# ]] && continue
+            for a in "${active_sessions[@]}"; do
+                if [ "$a" = "$sname" ]; then
+                    ordered+=("$sname")
+                    break
+                fi
+            done
+        done < "$DESC_FILE"
+    fi
 
-if [ $IDX -ge 0 ] && [ $IDX -lt ${#SESSIONS[@]} ]; then
-    TARGET_SESS="${SESSIONS[$IDX]}"
-    echo "$TARGET_SESS" > "$ACTIVE_FILE"
+    for a in "${active_sessions[@]}"; do
+        local exists=false
+        for o in "${ordered[@]}"; do
+            [ "$o" = "$a" ] && { exists=true; break; }
+        done
+        [ "$exists" = false ] && ordered+=("$a")
+    done
+
+    echo "${ordered[@]}"
+}
+
+SESSIONS=($(get_ordered_sessions))
+TOTAL=${#SESSIONS[@]}
+[ "$TOTAL" -eq 0 ] && exit 0
+
+CURRENT=$(cat "$ACTIVE_FILE" 2>/dev/null || true)
+[ -z "$CURRENT" ] && CURRENT="${SESSIONS[0]}"
+
+TARGET=""
+
+case "$ACTION" in
+    [1-9])
+        IDX=$((ACTION - 1))
+        if [ "$IDX" -lt "$TOTAL" ]; then
+            TARGET="${SESSIONS[$IDX]}"
+        fi
+        ;;
+    10|0)
+        IDX=9
+        if [ "$IDX" -lt "$TOTAL" ]; then
+            TARGET="${SESSIONS[$IDX]}"
+        fi
+        ;;
+    toggle|last|back)
+        LAST_SNAME=$(tmux display-message -p "#{client_last_session}" 2>/dev/null || true)
+        if [ -n "$LAST_SNAME" ] && tmux has-session -t "$LAST_SNAME" 2>/dev/null && [ "$LAST_SNAME" != "$CURRENT" ]; then
+            TARGET="$LAST_SNAME"
+        fi
+        ;;
+esac
+
+if [ -n "$TARGET" ] && [ "$TARGET" != "$CURRENT" ]; then
+    # Atomically switch all connected clients (ttyd web screen + others)
+    CLIENTS=($(tmux list-clients -F "#{client_name}" 2>/dev/null || true))
+    if [ ${#CLIENTS[@]} -eq 0 ]; then
+        tmux switch-client -t "$TARGET" 2>/dev/null || true
+    elif [ ${#CLIENTS[@]} -eq 1 ]; then
+        tmux switch-client -c "${CLIENTS[0]}" -t "$TARGET" 2>/dev/null || true
+    else
+        ARGS=()
+        for i in "${!CLIENTS[@]}"; do
+            [ "$i" -gt 0 ] && ARGS+=(";")
+            ARGS+=("switch-client" "-c" "${CLIENTS[$i]}" "-t" "$TARGET")
+        done
+        tmux "${ARGS[@]}" 2>/dev/null || true
+    fi
+
+    # Update active session cache for feeder
+    echo "$TARGET" > "$ACTIVE_FILE" 2>/dev/null || true
 fi

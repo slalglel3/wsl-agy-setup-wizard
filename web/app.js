@@ -122,11 +122,8 @@ function syncValues() {
 
   const cmdElem = document.getElementById("cmd-portproxy");
   if (cmdElem) {
-    cmdElem.innerHTML = `<code>netsh interface portproxy add v4tov4 listenport=${sshPort} listenaddress=0.0.0.0 connectport=22 connectaddress=127.0.0.1</code>`;
+    cmdElem.innerHTML = `<code>netsh interface portproxy add v4tov4 listenport=${sshPort} listenaddress=0.0.0.0 connectport=22 connectaddress=%WSL_IP%</code>`;
   }
-
-  const hostElem = document.getElementById("display-host");
-  if (hostElem) hostElem.innerText = domain;
 
   const portElem = document.getElementById("display-port");
   if (portElem) portElem.innerText = sshPort;
@@ -232,27 +229,13 @@ async function executePackageCheckOrInstall() {
         consoleOutput.innerText += `- ${p.name}: ${p.status} ${p.path ? '(' + p.path + ')' : ''}\n`;
       });
       if (data.missing && data.missing.length > 0) {
-        consoleOutput.innerText += `\n[권장 설치 커맨드]:\n${data.install_command}\n`;
+        consoleOutput.innerText += `\n[필수 조치 필요]:\n터미널에서 아래 명령을 실행하여 누락된 패키지를 먼저 설치하세요:\n${data.install_command}\n`;
+        btnText.innerText = "⚠️ 패키지 설치 필요 (설치 후 다시 점검하세요)";
+        btn.classList.add("btn-secondary");
       } else {
         consoleOutput.innerText += `\n✔ 모든 필수 바이너리가 시스템에 완벽히 구비되어 있습니다.\n`;
+        btnText.innerText = "✔ 패키지 점검 완료 (다음 단계로 진행하세요)";
       }
-    } else {
-      const logs = [
-        "Reading package lists... Done",
-        "Building dependency tree... Done",
-        "The following NEW packages will be installed: tmux ttyd nginx cloudflared",
-        "Setting up tmux (3.4)...",
-        "Setting up ttyd (1.7.4)...",
-        "Setting up cloudflared connector...",
-        "All packages installed successfully! (Simulation Mode)"
-      ];
-      for (let i = 0; i < logs.length; i++) {
-        await new Promise(r => setTimeout(r, 200));
-        consoleOutput.innerText += logs[i] + "\n";
-      }
-    }
-
-    btnText.innerText = "✔ 패키지 점검 완료 (다음 단계로 진행하세요)";
   } catch (err) {
     consoleOutput.innerText = "오류 발생: " + err.message;
   } finally {

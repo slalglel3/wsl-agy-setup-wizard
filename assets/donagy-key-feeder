@@ -4,9 +4,13 @@ donagy-key-feeder: Zero-Latency Shell-less Key Injection Daemon for WSL Dual Sys
 - Reads raw/hex bytes from stdin (via SSH forced command)
 - Resolves the current active tmux session (with fast cache)
 - Intercepts Alt + 1~9, Alt + 0, Alt + ` for instant tm-jump session switching
-- Intelligent PageUp / PageDown handler
-- 0ms zero-latency for regular typing
-- Forwards function keys, navigation, arrows directly into tmux
+- Intelligent PageUp / PageDown handler:
+  - If in alternate screen (vim/less/htop/fzf): passes \\e[5~ / \\e[6~ to the application
+  - If in normal shell: enters copy-mode (-u) and scrolls smoothly
+  - Automatically cancels copy-mode upon bottom or upon normal typing/Esc/q
+  - 0ms zero-latency for regular typing (no extra subprocess calls while typing)
+- Forwards all function keys (F1~F12), navigation, arrows, Korean, and English
+  directly into tmux using `tmux send-keys -H` via execve
 - Purely event-driven: NO polling, NO background threads
 """
 
@@ -42,6 +46,7 @@ def set_kb_state(state: int):
         pass
 
 def sig_handler(signum, frame):
+    log(f"SIG_HANDLER called with signum={signum}")
     set_kb_state(0)
     sys.exit(0)
 
@@ -57,70 +62,264 @@ def get_active_session(override_target=None):
         except Exception:
             pass
 
-    if os.path.exists(ACTIVE_SESSION_FILE):
-        try:
+    # 1. Check shared in-memory active session file (0.007ms instant access)
+    try:
+        if os.path.exists(ACTIVE_SESSION_FILE):
             with open(ACTIVE_SESSION_FILE, "r") as f:
-                sess = f.read().strip()
-                if sess:
-                    return sess
-        except Exception:
-            pass
+                s = f.read().strip()
+                if s:
+                    res = subprocess.run(
+                        [TMUX, "has-session", "-t", s],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.2
+                    )
+                    if res.returncode == 0:
+                        return s
+    except Exception:
+        pass
 
+    # 2. Check client's current session via tmux
     try:
         res = subprocess.run(
-            [TMUX, "list-sessions", "-F", "#{session_name}"],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=0.5
+            [TMUX, "list-clients", "-F", "#{session_name}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=0.5
+        )
+        for line in res.stdout.strip().splitlines():
+            s = line.strip()
+            if s:
+                try:
+                    with open(ACTIVE_SESSION_FILE, "w") as f:
+                        f.write(s + "\n")
+                except Exception:
+                    pass
+                return s
+    except Exception:
+        pass
+
+    # 3. Fallback to 'main'
+    try:
+        res = subprocess.run(
+            [TMUX, "has-session", "-t", "main"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=0.5
         )
         if res.returncode == 0:
-            lines = res.stdout.strip().splitlines()
-            if lines:
-                return lines[0]
+            return "main"
     except Exception:
         pass
 
     return "main"
 
-def main():
-    signal.signal(signal.SIGINT, sig_handler)
-    signal.signal(signal.SIGTERM, sig_handler)
-    set_kb_state(1)
+# SGR 1006 mouse wheel sequences (6 ticks = ~10 lines smooth scroll in agy/charm viewport)
+WHEEL_UP_6X = [
+    "1b", "5b", "3c", "36", "34", "3b", "31", "30", "3b", "31", "30", "4d",
+    "1b", "5b", "3c", "36", "34", "3b", "31", "30", "3b", "31", "30", "4d",
+    "1b", "5b", "3c", "36", "34", "3b", "31", "30", "3b", "31", "30", "4d",
+    "1b", "5b", "3c", "36", "34", "3b", "31", "30", "3b", "31", "30", "4d",
+    "1b", "5b", "3c", "36", "34", "3b", "31", "30", "3b", "31", "30", "4d",
+    "1b", "5b", "3c", "36", "34", "3b", "31", "30", "3b", "31", "30", "4d",
+]
+WHEEL_DOWN_6X = [
+    "1b", "5b", "3c", "36", "35", "3b", "31", "30", "3b", "31", "30", "4d",
+    "1b", "5b", "3c", "36", "35", "3b", "31", "30", "3b", "31", "30", "4d",
+    "1b", "5b", "3c", "36", "35", "3b", "31", "30", "3b", "31", "30", "4d",
+    "1b", "5b", "3c", "36", "35", "3b", "31", "30", "3b", "31", "30", "4d",
+    "1b", "5b", "3c", "36", "35", "3b", "31", "30", "3b", "31", "30", "4d",
+    "1b", "5b", "3c", "36", "35", "3b", "31", "30", "3b", "31", "30", "4d",
+]
 
-    override_target = sys.argv[1] if len(sys.argv) > 1 else None
-    active_target = get_active_session(override_target)
+def query_pane_state(target):
+    try:
+        res = subprocess.run(
+            [TMUX, "display-message", "-t", target, "-p", "#{alternate_on}\t#{pane_in_mode}\t#{scroll_position}\t#{pane_current_command}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=0.5
+        )
+        parts = res.stdout.rstrip("\n").split("\t")
+        alt_on = parts[0] if len(parts) > 0 else "0"
+        in_mode = parts[1] if len(parts) > 1 else "0"
+        scroll_pos = parts[2] if len(parts) > 2 else ""
+        pane_cmd = parts[3] if len(parts) > 3 else ""
+        return alt_on, in_mode, scroll_pos, pane_cmd
+    except Exception:
+        return "0", "0", "", ""
+
+def run_loop():
+    override_target = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("SSH_ORIGINAL_COMMAND")
+    if override_target:
+        override_target = override_target.strip().split()[0] if override_target.strip() else None
+        if override_target == "donagy-key-feeder":
+            override_target = None
 
     stdin_fd = sys.stdin.fileno()
+    current_target = get_active_session(override_target)
+    leftover = b""
+    in_copy_mode = False
+    last_read_time = time.monotonic()
 
     while True:
         try:
-            line = sys.stdin.readline()
-            if not line:
+            new_data = os.read(stdin_fd, 128)
+            if not new_data:
+                log("stdin EOF (0 bytes) received from SSH channel, closing loop")
                 break
-            line = line.strip()
-            if not line:
-                continue
-
-            # Switch session on Alt + 1~5
-            if line.startswith("ALT_"):
-                key_num = line.replace("ALT_", "")
-                if os.path.exists(TM_JUMP):
-                    subprocess.run([TM_JUMP, key_num], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                active_target = get_active_session(override_target)
-                continue
-
-            # Send raw hex/keys to active tmux session
-            active_target = get_active_session(override_target)
-            if line.startswith("HEX:"):
-                hex_data = line[4:].strip()
-                subprocess.run([TMUX, "send-keys", "-t", active_target, "-H", hex_data],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            else:
-                subprocess.run([TMUX, "send-keys", "-t", active_target, line],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (KeyboardInterrupt, EOFError):
+            log("KeyboardInterrupt or EOFError encountered")
+            break
         except Exception as e:
-            log(f"Error in feeder loop: {e}")
+            log(f"os.read exception: {type(e).__name__}: {e}")
             break
 
-    set_kb_state(0)
+        now = time.monotonic()
+        if now - last_read_time > 0.15:
+            current_target = get_active_session(override_target)
+        else:
+            try:
+                if os.path.exists(ACTIVE_SESSION_FILE):
+                    with open(ACTIVE_SESSION_FILE, "r") as f:
+                        s = f.read().strip()
+                        if s and s != current_target:
+                            current_target = s
+            except Exception:
+                pass
+        last_read_time = now
+
+        chunk = leftover + new_data
+        leftover = b""
+
+        idx = 0
+        n = len(chunk)
+        while idx < n:
+            # 1. Alt + 1..9, Alt + 0, Alt + ` (Session jump shortcuts)
+            if idx + 2 <= n and chunk[idx] == 0x1B:
+                c = chunk[idx+1]
+                if 0x31 <= c <= 0x39:  # '1' <= c <= '9'
+                    if in_copy_mode:
+                        subprocess.run([TMUX, "send-keys", "-t", current_target, "-X", "cancel"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+                        in_copy_mode = False
+                    if os.path.exists(TM_JUMP):
+                        subprocess.run([TM_JUMP, chr(c)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1)
+                    current_target = get_active_session(override_target)
+                    idx += 2
+                    continue
+                elif c == 0x30:  # '0' -> Tab 10
+                    if in_copy_mode:
+                        subprocess.run([TMUX, "send-keys", "-t", current_target, "-X", "cancel"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+                        in_copy_mode = False
+                    if os.path.exists(TM_JUMP):
+                        subprocess.run([TM_JUMP, "10"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1)
+                    current_target = get_active_session(override_target)
+                    idx += 2
+                    continue
+                elif c == 0x60:  # '`' -> Toggle
+                    if in_copy_mode:
+                        subprocess.run([TMUX, "send-keys", "-t", current_target, "-X", "cancel"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+                        in_copy_mode = False
+                    if os.path.exists(TM_JUMP):
+                        subprocess.run([TM_JUMP, "toggle"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1)
+                    current_target = get_active_session(override_target)
+                    idx += 2
+                    continue
+
+            # Incomplete escape sequence at the end of chunk -> keep in leftover
+            if chunk[idx:] in (b"\x1b", b"\x1b[", b"\x1b[5", b"\x1b[6", b"\x1bO", b"\x1b[1", b"\x1b[2"):
+                leftover = chunk[idx:]
+                break
+
+            # 2. Intelligent 10-Line PageUp (\\e[5~)
+            if idx + 4 <= n and chunk[idx:idx+4] == b"\x1b[5~":
+                alt_on, in_mode, _, pane_cmd = query_pane_state(current_target)
+                if alt_on == "1":
+                    if pane_cmd == "agy":
+                        subprocess.run([TMUX, "send-keys", "-t", current_target, "-H"] + WHEEL_UP_6X, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+                    else:
+                        subprocess.run([TMUX, "send-keys", "-t", current_target, "-H", "1b", "5b", "35", "7e"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+                    in_copy_mode = False
+                else:
+                    if in_mode == "0":
+                        subprocess.run([TMUX, "copy-mode", "-t", current_target, "-e", ";", "send-keys", "-t", current_target, "-X", "-N", "10", "scroll-up"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+                    else:
+                        subprocess.run([TMUX, "send-keys", "-t", current_target, "-X", "-N", "10", "scroll-up"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+                    in_copy_mode = True
+                idx += 4
+                continue
+
+            # 3. Intelligent 10-Line PageDown (\\e[6~)
+            if idx + 4 <= n and chunk[idx:idx+4] == b"\x1b[6~":
+                alt_on, in_mode, scroll_pos, pane_cmd = query_pane_state(current_target)
+                if alt_on == "1":
+                    if pane_cmd == "agy":
+                        subprocess.run([TMUX, "send-keys", "-t", current_target, "-H"] + WHEEL_DOWN_6X, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+                    else:
+                        subprocess.run([TMUX, "send-keys", "-t", current_target, "-H", "1b", "5b", "36", "7e"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+                    in_copy_mode = False
+                elif in_copy_mode or in_mode == "1":
+                    if scroll_pos == "0":
+                        subprocess.run([TMUX, "send-keys", "-t", current_target, "-X", "cancel"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+                        in_copy_mode = False
+                    else:
+                        subprocess.run([TMUX, "send-keys", "-t", current_target, "-X", "-N", "10", "scroll-down-and-cancel"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+                        _, new_in_mode, new_pos, _ = query_pane_state(current_target)
+                        if new_in_mode == "0" or new_pos == "0":
+                            in_copy_mode = False
+                        else:
+                            in_copy_mode = True
+                idx += 4
+                continue
+
+            # 4. Handle copy-mode exit upon typing or Esc/q
+            if in_copy_mode:
+                subprocess.run([TMUX, "send-keys", "-t", current_target, "-X", "cancel"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+                in_copy_mode = False
+                if chunk[idx:idx+1] == b"q" or chunk[idx:idx+1] == b"\x1b":
+                    idx += 1
+                    continue
+
+            # 5. Forward regular keys directly to tmux
+            start = idx
+            while idx < n:
+                if chunk[idx] == 0x1B:
+                    if idx + 2 <= n and ((0x30 <= chunk[idx+1] <= 0x39) or chunk[idx+1] == 0x60):
+                        break
+                    if idx + 4 <= n and (chunk[idx:idx+4] == b"\x1b[5~" or chunk[idx:idx+4] == b"\x1b[6~"):
+                        break
+                    if chunk[idx:] in (b"\x1b", b"\x1b[", b"\x1b[5", b"\x1b[6", b"\x1bO", b"\x1b[1", b"\x1b[2"):
+                        break
+                idx += 1
+
+            sub = chunk[start:idx]
+            if sub:
+                hex_args = [f"{b:02x}" for b in sub]
+                cmd = [TMUX, "send-keys", "-t", current_target, "-H"] + hex_args
+                try:
+                    res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1)
+                    if res.returncode != 0:
+                        current_target = get_active_session()
+                        cmd[3] = current_target
+                        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1)
+                except Exception:
+                    pass
+
+def main():
+    try:
+        signal.signal(signal.SIGTERM, sig_handler)
+        signal.signal(signal.SIGHUP, sig_handler)
+        signal.signal(signal.SIGINT, sig_handler)
+    except Exception:
+        pass
+
+    log("Feeder started -> set_kb_state(1)")
+    set_kb_state(1)
+    try:
+        run_loop()
+    finally:
+        log("Feeder exiting -> set_kb_state(0)")
+        set_kb_state(0)
 
 if __name__ == "__main__":
     main()

@@ -321,10 +321,10 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
         else:
             results.append({"name": "cloudflared", "status": "installed", "detail": cf_path})
 
-        # 3. Check system apt binaries (tmux, nginx, sshd)
+        # 3. Check system apt binaries (tmux, openssh-server)
         missing_apt = []
-        for pkg in ["tmux", "nginx"]:
-            p = shutil.which(pkg)
+        for pkg in ["tmux", "openssh-server"]:
+            p = shutil.which(pkg) if pkg != "openssh-server" else shutil.which("sshd")
             if p:
                 results.append({"name": pkg, "status": "installed", "detail": p})
             else:
@@ -346,7 +346,7 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
             "message": "Binary provisioning complete." if status_flag == "success" else "Some packages require attention.",
             "packages": results,
             "missing": missing_apt,
-            "install_command": "sudo apt update && sudo apt install -y tmux nginx openssh-server"
+            "install_command": "sudo apt update && sudo apt install -y tmux openssh-server"
         }
 
     def handle_verify_token(self, data, is_real):
@@ -590,7 +590,7 @@ WantedBy=default.target
         except Exception:
             pass
 
-        all_ok = ttyd_active and port_open and feeder_ok
+        all_ok = ttyd_active and port_open and feeder_ok and ssh_active
         return {
             "status": "success",
             "health": {
