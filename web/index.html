@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WSL2 AGY Dual-Display System Setup Wizard (Simulation Mode)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-area">
+        <div class="logo-badge">AGY</div>
+        <div class="logo-text">
+          <h1>WSL2 AGY Setup Wizard</h1>
+          <p class="subtitle">Dual-Display System Easy Installer (Simulation & Preview Mode)</p>
+        </div>
+      </div>
+      <div class="mode-badge">
+        <span class="pulse-dot"></span> 100% Safe Simulation
+      </div>
+    </header>
+
+    <!-- Stepper Navigation -->
+    <nav class="stepper-nav">
+      <div class="step-indicator active" data-step="1">
+        <div class="step-num">1</div>
+        <div class="step-label">환경 진단</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step-indicator" data-step="2">
+        <div class="step-num">2</div>
+        <div class="step-label">포트 배정</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step-indicator" data-step="3">
+        <div class="step-num">3</div>
+        <div class="step-label">패키지 설치</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step-indicator" data-step="4">
+        <div class="step-num">4</div>
+        <div class="step-label">도메인 & CF</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step-indicator" data-step="5">
+        <div class="step-num">5</div>
+        <div class="step-label">웹 서비스 배포</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step-indicator" data-step="6">
+        <div class="step-num">6</div>
+        <div class="step-label">모바일 페어링</div>
+      </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="wizard-card">
+      <!-- Step 1: System Inspection -->
+      <section class="step-content active" id="step-1">
+        <div class="step-header">
+          <h2>Step 1: 환경 자동 진단 (System Inspection)</h2>
+          <p>현재 PC 및 WSL2 가상화 환경의 필수 요구 조건을 자동으로 검사합니다.</p>
+        </div>
+        <div class="card-body">
+          <div class="info-alert">
+            <span class="icon">ℹ️</span>
+            <div>이 단계에서는 어떠한 설정도 변경하지 않으며 시스템의 가용 상태만 점검합니다.</div>
+          </div>
+          <div class="inspection-list" id="inspection-items">
+            <!-- Dynamically populated -->
+            <div class="check-item"><span class="check-status check-pass">✔</span><div class="check-info"><strong>WSL2 Virtualization</strong><span>WSL2 가상화 서브시스템 감지됨</span></div></div>
+            <div class="check-item"><span class="check-status check-pass">✔</span><div class="check-info"><strong>Linux Distribution</strong><span>Ubuntu 22.04 / 24.04 호환 배포판</span></div></div>
+            <div class="check-item"><span class="check-status check-pass">✔</span><div class="check-info"><strong>systemd Support</strong><span>사용자 systemd 데몬 활성화됨</span></div></div>
+            <div class="check-item"><span class="check-status check-pass">✔</span><div class="check-info"><strong>Network & Loopback Stack</strong><span>IPv4 로컬 루프백 정상</span></div></div>
+          </div>
+          <div class="env-summary-table">
+            <div class="summary-row"><span class="label">OS 환경:</span><span class="val" id="env-os">Linux (WSL2)</span></div>
+            <div class="summary-row"><span class="label">배포판:</span><span class="val" id="env-distro">Ubuntu 24.04 LTS</span></div>
+            <div class="summary-row"><span class="label">사용자 계정:</span><span class="val highlight" id="env-user">$USER (자동 감지)</span></div>
+            <div class="summary-row"><span class="label">홈 디렉토리:</span><span class="val highlight" id="env-home">$HOME (자동 감지)</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 2: Port & Network Allocation -->
+      <section class="step-content" id="step-2">
+        <div class="step-header">
+          <h2>Step 2: 네트워크 및 난수 포트 자동 배정 (Port Allocation)</h2>
+          <p>개인화 포트 노출을 방지하고 충돌을 피하기 위해 <code>20000~60000</code> 대역의 미사용 포트를 무작위로 자동 추천합니다.</p>
+        </div>
+        <div class="card-body">
+          <div class="port-grid">
+            <div class="port-card">
+              <div class="port-badge">웹 대시보드 (ttyd)</div>
+              <label for="input-ttyd-port">내부 서비스 포트</label>
+              <div class="input-with-button">
+                <input type="number" id="input-ttyd-port" value="38491">
+                <button type="button" class="btn-sm" id="btn-re-random">🎲 재추첨</button>
+              </div>
+              <p class="port-help">Cloudflare Tunnel을 통해 브라우저로 중계될 로컬 포트입니다.</p>
+            </div>
+            <div class="port-card">
+              <div class="port-badge">모바일 SSH 접속</div>
+              <label for="input-ssh-port">포트포워딩 포트</label>
+              <div class="input-with-button">
+                <input type="number" id="input-ssh-port" value="29482">
+                <button type="button" class="btn-sm" id="btn-re-random-ssh">🎲 재추첨</button>
+              </div>
+              <p class="port-help">스마트폰 물리 키보드 앱(KeyBridge)이 WSL로 직결할 외부 포트입니다.</p>
+            </div>
+          </div>
+
+          <div class="code-snippet-box">
+            <div class="code-header">
+              <span>Windows 호스트 자동 포트포워딩 명령 (PortProxy)</span>
+              <button class="btn-copy" onclick="copySnippet('cmd-portproxy')">📋 복사</button>
+            </div>
+            <pre id="cmd-portproxy"><code>netsh interface portproxy add v4tov4 listenport=29482 listenaddress=0.0.0.0 connectport=22 connectaddress=127.0.0.1</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 3: Package Installation -->
+      <section class="step-content" id="step-3">
+        <div class="step-header">
+          <h2>Step 3: 필수 패키지 및 런타임 설치 (Package Provisioning)</h2>
+          <p>시스템 구동에 필요한 핵심 바이너리(`tmux`, `ttyd`, `nginx`, `cloudflared`)를 설치합니다.</p>
+        </div>
+        <div class="card-body">
+          <div class="package-list">
+            <div class="pkg-item"><span class="pkg-icon">📦</span><div class="pkg-info"><strong>tmux (v3.4+)</strong><span>터미널 멀티플렉서 & 백그라운드 세션 지속</span></div><span class="pkg-badge ready">준비 완료</span></div>
+            <div class="pkg-item"><span class="pkg-icon">📦</span><div class="pkg-info"><strong>ttyd (v1.7+)</strong><span>터미널을 웹소켓 브라우저 화면으로 전송하는 초경량 데몬</span></div><span class="pkg-badge ready">준비 완료</span></div>
+            <div class="pkg-item"><span class="pkg-icon">📦</span><div class="pkg-info"><strong>nginx</strong><span>웹소켓 리버스 프록시 및 Read-Only 버퍼 보안 가드</span></div><span class="pkg-badge ready">준비 완료</span></div>
+            <div class="pkg-item"><span class="pkg-icon">📦</span><div class="pkg-info"><strong>cloudflared</strong><span>포트 개방/공유기 설정 없는 안전한 Zero Trust 인그레스 터널</span></div><span class="pkg-badge ready">준비 완료</span></div>
+          </div>
+
+          <div class="action-box">
+            <button class="btn btn-primary" id="btn-simulate-install">
+              <span id="install-btn-text">🚀 필수 패키지 자동 설치 시작 (시뮬레이션)</span>
+            </button>
+          </div>
+
+          <div class="console-box" id="install-console" style="display:none;">
+            <div class="console-header">실시간 패키지 설치 로그 (시뮬레이션)</div>
+            <pre class="console-log" id="console-output"></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 4: Domain & Cloudflare -->
+      <section class="step-content" id="step-4">
+        <div class="step-header">
+          <h2>Step 4: 도메인 & Cloudflare Tunnel 연동 (Domain & Zero Trust)</h2>
+          <p>공유기 포트포워딩이나 공인 IP 노출 없이, 무료 Cloudflare Tunnel로 안전한 HTTPS 주소를 연결합니다.</p>
+        </div>
+        <div class="card-body">
+          <div class="accordion-guide">
+            <div class="guide-step">
+              <div class="guide-num">A</div>
+              <div class="guide-body">
+                <strong>도메인 준비</strong>
+                <p>Cloudflare Registrar, 가비아, Namecheap 등에서 원하는 도메인을 구매하거나 보유한 도메인을 Cloudflare에 등록합니다.</p>
+              </div>
+            </div>
+            <div class="guide-step">
+              <div class="guide-num">B</div>
+              <div class="guide-body">
+                <strong>Cloudflare Zero Trust 대시보드 ➔ Networks ➔ Tunnels 생성</strong>
+                <p>무료 터널을 생성하고 발급받은 <code>Install and run a connector</code> 토큰을 복사합니다.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="input-domain">내 도메인 주소 (예: myagy.your-domain.pro)</label>
+            <input type="text" id="input-domain" placeholder="예: myterminal.example.com" value="myagy.example.com">
+          </div>
+
+          <div class="form-group">
+            <label for="input-token">Cloudflare Tunnel Token (토큰 붙여넣기)</label>
+            <input type="password" id="input-token" placeholder="eyJhIjoi..." value="eyJhIjoiZXhhbXBsZXRva2VuZm9yc2ltdWxhdGlvbmRlbW8xMjM0NTY3ODkwIj4=">
+            <small class="form-text">입력된 토큰은 외부로 전송되지 않으며, 사용자 로컬 머신의 systemd 유닛에만 안전하게 템플릿화됩니다.</small>
+          </div>
+
+          <div class="action-box">
+            <button class="btn btn-secondary" id="btn-verify-token">🔗 터널 연결 테스트 (시뮬레이션)</button>
+            <span class="test-result" id="token-test-result"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 5: Read-Only Web Deploy -->
+      <section class="step-content" id="step-5">
+        <div class="step-header">
+          <h2>Step 5: Read-Only Web 터미널 서비스 배포 (Service Activation)</h2>
+          <p>이전 단계에서 설정된 값들을 바탕으로 템플릿을 생성하고 백그라운드 <code>systemd</code> 서비스를 등록합니다.</p>
+        </div>
+        <div class="card-body">
+          <div class="service-cards">
+            <div class="service-item">
+              <div class="service-status-dot green"></div>
+              <div class="service-details">
+                <strong>ttyd.service</strong>
+                <span>옵션: <code>-R (Read-Only)</code> 모드로 브라우저에서 안전한 화면 조회 전용 보장</span>
+              </div>
+              <span class="badge-active">Active</span>
+            </div>
+            <div class="service-item">
+              <div class="service-status-dot green"></div>
+              <div class="service-details">
+                <strong>cloudflared.service</strong>
+                <span>HTTPS ➔ 로컬 ttyd 포트 연결 터널 상시 기동</span>
+              </div>
+              <span class="badge-active">Active</span>
+            </div>
+            <div class="service-item">
+              <div class="service-status-dot green"></div>
+              <div class="service-details">
+                <strong>loginctl linger ($USER)</strong>
+                <span>WSL 창을 닫아도 백그라운드 프로세스가 영구 유지되도록 등록</span>
+              </div>
+              <span class="badge-active">Enabled</span>
+            </div>
+          </div>
+
+          <div class="action-box">
+            <button class="btn btn-primary" id="btn-deploy-services">⚡ 서비스 원클릭 등록 및 시작 (시뮬레이션)</button>
+          </div>
+          <div id="deploy-result" class="deploy-message" style="display:none;"></div>
+        </div>
+      </section>
+
+      <!-- Step 6: Mobile KeyBridge Pairing -->
+      <section class="step-content" id="step-6">
+        <div class="step-header">
+          <h2>Step 6: 모바일 KeyBridge 앱 페어링 & 가이드 (Mobile Setup)</h2>
+          <p>스마트폰의 KeyBridge 앱과 WSL 시스템을 안전하게 연결하기 위한 SSH 키페어 및 설정을 생성합니다.</p>
+        </div>
+        <div class="card-body">
+          <div class="pairing-container">
+            <div class="qr-preview-box">
+              <div class="qr-placeholder">
+                <div class="qr-mock-code">
+                  <div class="qr-corner tl"></div>
+                  <div class="qr-corner tr"></div>
+                  <div class="qr-corner bl"></div>
+                  <div class="qr-center-text">DEMO QR</div>
+                </div>
+              </div>
+              <p class="qr-caption">KeyBridge 앱에서 [QR 설정 스캔] 시 1초 만에 페어링 완료</p>
+            </div>
+            <div class="pairing-details">
+              <h4>모바일 앱 수동 입력 정보</h4>
+              <div class="field-copy-group">
+                <span class="field-title">접속 호스트 (Host):</span>
+                <code id="display-host">myagy.example.com (또는 Tailscale IP)</code>
+              </div>
+              <div class="field-copy-group">
+                <span class="field-title">SSH 외부 포트:</span>
+                <code id="display-port">29482</code>
+              </div>
+              <div class="field-copy-group">
+                <span class="field-title">사용자명 (Username):</span>
+                <code id="display-user">$USER (현재 리눅스 계정)</code>
+              </div>
+              <div class="field-copy-group">
+                <span class="field-title">인증 방식:</span>
+                <code>Ed25519 개인키 자동 등록됨</code>
+              </div>
+            </div>
+          </div>
+
+          <div class="apk-download-card">
+            <div class="apk-icon">📱</div>
+            <div class="apk-info">
+              <strong>Donagy KeyBridge 안드로이드 앱 설치</strong>
+              <p>물리 블루투스 키보드 신호를 가로채 WSL에 실시간 전달하는 0.1ms 무지연 브릿지 앱입니다.</p>
+            </div>
+            <button class="btn btn-secondary" onclick="alert('데모 모드: 실제 릴리즈 시 빌드된 APK 다운로드 링크가 열립니다.')">APK 다운로드 가이드</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 7: Completed -->
+      <section class="step-content" id="step-7">
+        <div class="step-header celebration">
+          <div class="celebration-icon">🎉</div>
+          <h2>모든 환경 구성 시뮬레이션이 완료되었습니다!</h2>
+          <p>이제 PC(WSL2)와 모바일(스마트폰)이 완벽히 연동되는 듀얼 디스플레이 환경이 완성되었습니다.</p>
+        </div>
+        <div class="card-body">
+          <div class="success-summary-box">
+            <h3>최종 구성 결과 요약</h3>
+            <ul>
+              <li><strong>Read-Only Web 주소:</strong> <code>https://myagy.example.com</code> (스마트폰이나 태블릿 브라우저에서 실시간 터미널 관제)</li>
+              <li><strong>물리 키보드 입력 브릿지:</strong> 모바일 KeyBridge ➔ 포트 <code>29482</code> ➔ WSL tmux 세션 직결</li>
+              <li><strong>백그라운드 지속성:</strong> WSL 창을 꺼도 백그라운드 세션 및 데몬 24시간 상시 유지</li>
+            </ul>
+          </div>
+          <div class="action-box">
+            <button class="btn btn-primary" onclick="restartWizard()">🔄 1단계부터 다시 시뮬레이션해보기</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer Controls -->
+    <footer class="wizard-footer">
+      <button class="btn btn-ghost" id="btn-prev" disabled>◀ 이전 단계</button>
+      <div class="step-counter"><span id="curr-step-num">1</span> / 6 단계</div>
+      <button class="btn btn-primary" id="btn-next">다음 단계 ▶</button>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
