@@ -79,9 +79,9 @@ function updateModeUI() {
 function changeStep(newStep) {
   if (newStep < 1 || newStep > 7) return;
 
-  // Step 3 -> Step 4 Gate: Enforce package inspection/readiness
-  if (currentStep === 3 && newStep > 3 && !packagesReady) {
-    alert("⚠️ 필수 패키지(tmux, openssh-server 등)가 준비되지 않았습니다.\n먼저 [패키지 점검 및 설치] 버튼을 실행하여 준비를 완료하세요.");
+  // Package Gate: Enforce package inspection/readiness before accessing Step 4+
+  if (newStep > 3 && !packagesReady) {
+    alert("⚠️ 필수 패키지(tmux, openssh-server 등)가 준비되지 않았습니다.\n먼저 Step 3에서 [패키지 점검 및 설치]를 완료하세요.");
     return;
   }
 

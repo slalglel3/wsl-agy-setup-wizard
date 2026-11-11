@@ -16,7 +16,7 @@ set SSH_PORT={{ SSH_PORT }}
 echo ==============================================================================
 echo [1/4] Ensuring WSL OpenSSH Server is running...
 echo ==============================================================================
-wsl -e bash -c "sudo service ssh status >/dev/null 2>&1 || sudo service ssh start" >nul 2>&1
+wsl -u root service ssh status >nul 2>&1 || wsl -u root service ssh start >nul 2>&1
 
 echo ==============================================================================
 echo [2/4] Detecting WSL2 Internal Virtual IP...
