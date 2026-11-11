@@ -19,9 +19,9 @@ flowchart TD
         PhysKB["물리 블루투스 키보드"]
         KeyBridge["Donagy KeyBridge 앱 (0.1ms 무지연 브릿지)"]
         Browser["웹 브라우저 (Chrome / Safari)"]
-        WebScreen["Read-Only 대시보드"]
+        WebScreen["Read-Only 대시보드 화면"]
         PhysKB -->|"하드웨어 입력"| KeyBridge
-        Browser -->|"실시간 화면 관제"| WebScreen
+        WebScreen -->|"실시간 렌더링"| Browser
     end
 
     subgraph Cloudflare["Cloudflare Edge Network"]
@@ -42,9 +42,9 @@ flowchart TD
     KeyBridge -->|"SSH 연결"| PortProxy
     PortProxy -->|"로컬 중계"| SSH
     SSH --> Tmux
-    WebScreen -->|"HTTPS 접속"| Tunnel
-    Tunnel --> TTYD
-    TTYD -->|"세션 미러링"| Tmux
+    Tmux -->|"세션 미러링"| TTYD
+    TTYD -->|"터널 중계"| Tunnel
+    Tunnel -->|"HTTPS 스트림"| WebScreen
 ```
 
 ---
