@@ -2,10 +2,14 @@ let currentStep = 1;
 const totalSteps = 6;
 let isRealMode = false;
 let packagesReady = false;
+let currentEnvData = null;
+let lastConsoleLog = "";
+let lastHealthCheck = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   initEventListeners();
   fetchInitialInspection();
+  setTimeout(renderRealQRCode, 300);
 });
 
 function initEventListeners() {
@@ -51,8 +55,20 @@ function initEventListeners() {
   });
 
   // Dynamic input sync
-  document.getElementById("input-domain").addEventListener("input", syncValues);
-  document.getElementById("input-ssh-port").addEventListener("input", syncValues);
+  document.getElementById("input-domain").addEventListener("input", () => {
+    syncValues();
+    renderRealQRCode();
+  });
+  document.getElementById("input-ssh-port").addEventListener("input", () => {
+    syncValues();
+    renderRealQRCode();
+  });
+
+  // Modal backdrop click to close
+  const modal = document.getElementById("agy-help-modal");
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeAgyHelpModal();
+  });
 }
 
 function updateModeUI() {
@@ -121,6 +137,9 @@ function changeStep(newStep) {
   }
 
   syncValues();
+  if (currentStep === 6) {
+    renderRealQRCode();
+  }
 }
 
 function syncValues() {
@@ -147,8 +166,8 @@ async function fetchInitialInspection() {
     const res = await fetch("/api/inspect");
     const data = await res.json();
     if (data.status === "success") {
+      currentEnvData = data;
       document.getElementById("env-os").innerText = data.environment.os;
-      document.getElementById("env-distro").innerText = data.environment.distribution;
       document.getElementById("env-user").innerText = data.environment.user;
       document.getElementById("env-home").innerText = data.environment.home;
       document.getElementById("display-user").innerText = data.environment.user;
@@ -164,7 +183,7 @@ async function fetchInitialInspection() {
       }
     }
   } catch (err) {
-    console.log("Inspection demo fallback");
+    console.error("Inspect fetch error:", err);
   }
 }
 
@@ -177,16 +196,15 @@ function updatePackageBadges(pkgs) {
   };
   for (const [name, id] of Object.entries(map)) {
     const el = document.getElementById(id);
-    if (el) {
-      if (pkgs[name]) {
-        el.innerText = "설치됨 ✔";
-        el.style.background = "rgba(16, 185, 129, 0.2)";
-        el.style.color = "#10b981";
-      } else {
-        el.innerText = "미설치";
-        el.style.background = "rgba(239, 68, 68, 0.2)";
-        el.style.color = "#ef4444";
-      }
+    if (!el) continue;
+    if (pkgs[name]) {
+      el.innerText = "설치됨 ✔";
+      el.className = "pkg-badge ready";
+    } else {
+      el.innerText = "미설치";
+      el.className = "pkg-badge";
+      el.style.background = "#ef4444";
+      el.style.color = "#fff";
     }
   }
 }
@@ -196,16 +214,13 @@ async function generateRandomPorts() {
     const res = await fetch("/api/generate-ports");
     const data = await res.json();
     if (data.status === "success") {
-      document.getElementById("input-ttyd-port").value = data.ttyd_port;
-      document.getElementById("input-ssh-port").value = data.ssh_external_port;
+      document.getElementById("input-ttyd-port").value = data.ports.ttyd_port;
+      document.getElementById("input-ssh-port").value = data.ports.ssh_port;
       syncValues();
+      renderRealQRCode();
     }
   } catch (err) {
-    const r1 = Math.floor(Math.random() * (59000 - 20000) + 20000);
-    const r2 = Math.floor(Math.random() * (59000 - 20000) + 20000);
-    document.getElementById("input-ttyd-port").value = r1;
-    document.getElementById("input-ssh-port").value = r2;
-    syncValues();
+    console.error("Port generation error:", err);
   }
 }
 
@@ -213,10 +228,10 @@ async function executePackageCheckOrInstall() {
   const btn = document.getElementById("btn-simulate-install");
   const btnText = document.getElementById("install-btn-text");
   const consoleBox = document.getElementById("install-console");
-  const consoleOutput = document.getElementById("console-output");
+  const consoleOutput = document.getElementById("install-output");
 
   btn.disabled = true;
-  btnText.innerText = "⏳ 패키지 처리 진행 중...";
+  btnText.innerText = "진행 중...";
   consoleBox.style.display = "block";
   consoleOutput.innerText = "";
 
@@ -259,13 +274,15 @@ async function executePackageCheckOrInstall() {
         "All packages installed successfully! (Simulation Mode)"
       ];
       for (let i = 0; i < logs.length; i++) {
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise(r => setTimeout(r, 120));
         consoleOutput.innerText += logs[i] + "\n";
       }
       btnText.innerText = "✔ 패키지 점검 완료 (다음 단계로 진행하세요)";
     }
+    lastConsoleLog = consoleOutput.innerText;
   } catch (err) {
     consoleOutput.innerText = "오류 발생: " + err.message;
+    lastConsoleLog = consoleOutput.innerText;
   } finally {
     btn.disabled = false;
   }
@@ -300,43 +317,42 @@ async function executeTokenVerify() {
 }
 
 async function executeServiceDeploy() {
-  const btn = document.getElementById("btn-deploy-services");
-  const resDiv = document.getElementById("deploy-result");
   const ttydPort = document.getElementById("input-ttyd-port").value;
   const domain = document.getElementById("input-domain").value;
+  const deployResult = document.getElementById("deploy-result");
 
-  btn.disabled = true;
-  btn.innerText = "⏳ 서비스 등록 및 기동 중...";
+  deployResult.style.display = "block";
+  deployResult.innerHTML = "서비스 배포 및 등록 작업 진행 중...";
 
   try {
     const res = await fetch("/api/deploy-services", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ttyd_port: ttydPort, domain, real_mode: isRealMode })
+      body: JSON.stringify({ ttyd_port: ttydPort, domain: domain, real_mode: isRealMode })
     });
     const data = await res.json();
 
-    btn.innerText = "✔ 서비스 배포 완료";
-    resDiv.style.display = "block";
-    resDiv.innerHTML = `
-      <strong>${data.message}</strong><br>
-      - <code>ttyd.service</code>: [포트 ${ttydPort} 바인딩]<br>
-      - <code>cloudflared.service</code>: [도메인 ${domain} 연동]<br>
+    deployResult.className = `deploy-message ${data.status}`;
+    deployResult.innerHTML = `
+      <strong>${data.status === 'success' ? '✔' : '⚠️'} ${data.message}</strong><br>
+      - <code>ttyd.service</code>: [활성화 및 시작됨] (루프백 포트: ${ttydPort})<br>
+      - <code>cloudflared.service</code>: [활성화됨] (도메인: ${domain})<br>
       - <code>loginctl enable-linger</code>: [백그라운드 지속 활성화]
     `;
 
     if (isRealMode) {
       await runLiveHealthCheck(ttydPort);
     } else {
-      document.getElementById("badge-ttyd").innerText = "Active";
-      document.getElementById("badge-cf").innerText = "Active";
-      document.getElementById("badge-linger").innerText = "Enabled";
+      document.getElementById("badge-ttyd").innerText = "Active ✔";
+      document.getElementById("badge-ttyd").style.color = "#10b981";
+      document.getElementById("badge-cf").innerText = "Active ✔";
+      document.getElementById("badge-cf").style.color = "#10b981";
+      document.getElementById("badge-linger").innerText = "Enabled ✔";
+      document.getElementById("badge-linger").style.color = "#10b981";
     }
   } catch (err) {
-    resDiv.style.display = "block";
-    resDiv.innerText = "배포 중 오류: " + err.message;
-  } finally {
-    btn.disabled = false;
+    deployResult.className = "deploy-message error";
+    deployResult.innerHTML = "배포 중 오류 발생: " + err.message;
   }
 }
 
@@ -345,6 +361,7 @@ async function runLiveHealthCheck(ttydPort) {
     const res = await fetch(`/api/health-check?ttyd_port=${ttydPort}`);
     const data = await res.json();
     if (data.status === "success") {
+      lastHealthCheck = data.health;
       const h = data.health;
       const ttydBadge = document.getElementById("badge-ttyd");
       const cfBadge = document.getElementById("badge-cf");
@@ -381,6 +398,7 @@ async function executeGenerateKeypair() {
         ? `✔ 키 생성 완료 (~/.ssh/id_keybridge_wizard 등록됨)`
         : `✔ 시뮬레이션 키페어 발급 완료`;
       authStatus.style.color = "#10b981";
+      renderRealQRCode();
       alert(data.message || "새 SSH 키페어가 발급되었습니다.");
     }
   } catch (err) {
@@ -388,10 +406,137 @@ async function executeGenerateKeypair() {
   }
 }
 
+function renderRealQRCode() {
+  const container = document.getElementById("qr-real-box");
+  if (!container || typeof QRCode === "undefined") return;
+
+  container.innerHTML = "";
+  const host = "192.168.0.x";
+  const port = document.getElementById("input-ssh-port") ? document.getElementById("input-ssh-port").value : "29482";
+  const user = currentEnvData?.environment?.user || "wsl_user";
+  
+  // Format for KeyBridge App pairing
+  const payload = JSON.stringify({
+    app: "KeyBridge",
+    host: host,
+    port: parseInt(port),
+    user: user,
+    auth: "ed25519"
+  });
+
+  try {
+    new QRCode(container, {
+      text: payload,
+      width: 140,
+      height: 140,
+      colorDark: "#0f172a",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } catch (err) {
+    console.error("QR Code generation error:", err);
+  }
+}
+
+/* ==============================================================================
+   AGY CLI One-Click Prompt Generator & Modal Logic
+   ============================================================================== */
+const stepNames = {
+  1: "Step 1: 환경 사전 진단 (Environment Inspection)",
+  2: "Step 2: 포트 배정 및 Windows 호스트 연동",
+  3: "Step 3: 필수 패키지 점검 및 설치",
+  4: "Step 4: 도메인 & Cloudflare Tunnel 연동",
+  5: "Step 5: Read-Only Web 터미널 서비스 배포",
+  6: "Step 6: 모바일 KeyBridge 앱 페어링"
+};
+
+function buildAgyPrompt(step) {
+  const stepTitle = stepNames[step] || `Step ${step}`;
+  const osInfo = currentEnvData?.environment?.os || "Linux / WSL2";
+  const userInfo = currentEnvData?.environment?.user || "$USER";
+  const homeInfo = currentEnvData?.environment?.home || "$HOME";
+  const modeStr = isRealMode ? "실제 설치 모드 (Real Mode)" : "시뮬레이션 모드 (Simulation Mode)";
+
+  let detailLog = "";
+  if (step === 1) {
+    detailLog = `[Step 1 진단 상태]\n` +
+      `- WSL2 여부: ${document.getElementById("inspect-wsl")?.innerText || "미확인"}\n` +
+      `- Linux 배포판: ${document.getElementById("inspect-distro")?.innerText || "미확인"}\n` +
+      `- systemd 지원: ${document.getElementById("inspect-systemd")?.innerText || "미확인"}`;
+  } else if (step === 2) {
+    const ttydPort = document.getElementById("input-ttyd-port")?.value || "34281";
+    const sshPort = document.getElementById("input-ssh-port")?.value || "29482";
+    detailLog = `[Step 2 포트 및 배치파일]\n` +
+      `- ttyd 포트: ${ttydPort}\n` +
+      `- SSH 외부 포트: ${sshPort}\n` +
+      `- 배치파일(setup-windows-host.bat) 실행 또는 포트포워딩 이슈 발생`;
+  } else if (step === 3) {
+    detailLog = `[Step 3 패키지 콘솔 로그]\n` + (lastConsoleLog || "패키지 검사 미실행 또는 에러 로그 없음");
+  } else if (step === 4) {
+    const domain = document.getElementById("input-domain")?.value || "myagy.example.com";
+    const tokenStatus = document.getElementById("token-test-result")?.innerText || "토큰 미검증";
+    detailLog = `[Step 4 Cloudflare 상태]\n- 도메인: ${domain}\n- 토큰 검증 결과: ${tokenStatus}`;
+  } else if (step === 5) {
+    const deployText = document.getElementById("deploy-result")?.innerText || "배포 로그 없음";
+    detailLog = `[Step 5 배포 및 헬스체크]\n- 결과: ${deployText}\n- 헬스체크: ${JSON.stringify(lastHealthCheck || {})}`;
+  } else if (step === 6) {
+    const authStatus = document.getElementById("display-auth-status")?.innerText || "미발급";
+    detailLog = `[Step 6 모바일 페어링]\n- SSH 인증 상태: ${authStatus}\n- 스마트폰 KeyBridge 연결 실패`;
+  }
+
+  return `[WSL2 AGY Setup Wizard 장애 해결 지원 요청]
+안녕하세요 AGY, 현재 'wsl-agy-setup-wizard'를 통해 듀얼 디스플레이 개발 환경을 구축하고 있는데, 아래 단계에서 문제가 발생했어.
+
+1. 기본 환경 정보:
+- 대상 단계: ${stepTitle}
+- OS / 배포판: ${osInfo}
+- 사용자 및 경로: ${userInfo} (${homeInfo})
+- 마법사 동작 모드: ${modeStr}
+
+2. 현재 단계 상세 상태 및 로그:
+\`\`\`
+${detailLog}
+\`\`\`
+
+3. 요청 사항:
+- 본 프로젝트에 포함된 \`TROUBLESHOOTING.md\` 매뉴얼을 직접 참고해서 현재 원인이 무엇인지 진단해줘.
+- 문제 해결을 위해 내 WSL2 환경에서 즉시 실행할 수 있는 원자적(Atomic) 복구 명령어 또는 자동 조치를 직접 수행해줘.`;
+}
+
+function openAgyHelpModal(step) {
+  const prompt = buildAgyPrompt(step);
+  document.getElementById("prompt-preview-text").innerText = prompt;
+  document.getElementById("agy-help-modal").classList.add("active");
+}
+
+function closeAgyHelpModal() {
+  document.getElementById("agy-help-modal").classList.remove("active");
+}
+
+function copyAgyPrompt() {
+  const text = document.getElementById("prompt-preview-text").innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    closeAgyHelpModal();
+    showToast("📋 AGY CLI 문제 해결 프롬프트가 클립보드에 복사되었습니다!");
+  }).catch(() => {
+    alert("클립보드 복사 실패: 화면의 프롬프트를 직접 드래그하여 복사하세요.");
+  });
+}
+
+function showToast(msg) {
+  const toast = document.getElementById("toast-notice");
+  if (!toast) return;
+  toast.innerText = msg;
+  toast.style.display = "block";
+  setTimeout(() => {
+    toast.style.display = "none";
+  }, 3500);
+}
+
 function copySnippet(elementId) {
   const text = document.getElementById(elementId).innerText;
   navigator.clipboard.writeText(text).then(() => {
-    alert("명령어가 클립보드에 복사되었습니다!");
+    showToast("명령어가 클립보드에 복사되었습니다!");
   });
 }
 

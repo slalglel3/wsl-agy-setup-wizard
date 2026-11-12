@@ -49,20 +49,20 @@ flowchart TD
 
 ---
 
-## 🚀 빠른 시작 (Web GUI 시뮬레이터 체험)
+## 🚀 빠른 시작 (Web GUI Setup Wizard)
 
-외부 라이브러리 설치 없이 Python 3만 설치되어 있다면 단 1줄로 마법사 시뮬레이터를 즉시 실행할 수 있습니다.
+외부 라이브러리 설치(`pip`)가 전혀 필요 없는 Pure Python 3 표준 라이브러리 기반으로 제작되었습니다.  
+Windows 작업표시줄에서 **Ubuntu(WSL2)** 터미널을 열고 아래 1줄 명령어를 복사하여 실행하세요:
 
 ```bash
-# 1. 저장소 복제 및 디렉토리 이동
-git clone https://github.com/your-org/wsl-agy-setup-wizard.git
-cd wsl-agy-setup-wizard
-
-# 2. 웹 설치 마법사 구동 (시뮬레이션 모드)
-python3 server.py
+git clone https://github.com/slalglel3/wsl-agy-setup-wizard.git && cd wsl-agy-setup-wizard && python3 server.py
 ```
 
-브라우저에서 **`http://localhost:8080`**에 접속하면 1단계부터 6단계까지의 설치 워크플로우를 직접 클릭하며 체험할 수 있습니다.
+명령어 실행 후 브라우저에서 **`http://localhost:8080`**에 접속하면 1단계부터 6단계까지의 대화형 웹 설치 마법사가 열립니다.
+
+> [!TIP]
+> **🤖 AGY CLI 연동 자가 복구 지원**:  
+> 설치 과정 중 특정 단계에서 막히거나 오류가 발생하면, 마법사 화면의 **`[🤖 AGY에게 문제 해결 요청]`** 버튼을 누르세요. 현재 시스템 진단 정보와 로그가 담긴 맞춤형 프롬프트가 복사되어, 터미널에 열려 있는 AGY CLI에게 붙여넣기만 하면 자동으로 문제를 해결해 줍니다.
 
 ---
 
@@ -74,7 +74,7 @@ python3 server.py
    - 개인 환경 노출을 방지하기 위해 `20000~60000` 대역 중 미사용 중인 임의의 포트 2개를 자동 추첨합니다.
    - Windows 호스트 `netsh portproxy` 설정 명령어를 자동 생성합니다.
 3. **Step 3: 필수 패키지 설치 (Package Provisioning)**
-   - `tmux`, `ttyd`, `nginx`, `cloudflared` 바이너리를 원클릭으로 설치합니다.
+   - `tmux`, `ttyd`, `openssh-server`, `cloudflared` 바이너리를 원클릭으로 설치합니다.
 4. **Step 4: 도메인 & Cloudflare Tunnel 연동 (Zero Trust)**
    - 무료 Cloudflare Tunnel 토큰을 연동하여 공유기 설정이나 공인 IP 노출 없이 HTTPS 도메인을 연결합니다.
 5. **Step 5: Read-Only Web 터미널 배포 (Service Activation)**
