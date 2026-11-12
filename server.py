@@ -365,7 +365,7 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
             return {
                 "status": "success",
                 "mode": "simulation",
-                "message": f"Successfully simulated connection to Cloudflare. Ingress mapped to {domain or 'your-domain.pro'}."
+                "message": f"Successfully simulated connection to Cloudflare. Ingress mapped to {domain or 'myterminal.example.com'}."
             }
 
         # Real Mode: Write ~/.config/systemd/user/cloudflared.service with http2 protocol guard
@@ -407,7 +407,7 @@ WantedBy=default.target
 
     def handle_deploy_services(self, data, is_real):
         ttyd_port = int(data.get("ttyd_port", 34281))
-        domain = data.get("domain", "your-domain.pro")
+        domain = data.get("domain", "myterminal.example.com")
 
         if not is_real:
             return {

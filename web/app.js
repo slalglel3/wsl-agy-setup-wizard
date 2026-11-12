@@ -9,6 +9,7 @@ let lastHealthCheck = null;
 document.addEventListener("DOMContentLoaded", () => {
   initEventListeners();
   fetchInitialInspection();
+  generateRandomPorts();
   setTimeout(renderRealQRCode, 300);
 });
 
