@@ -164,6 +164,8 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path == "/api/download-windows-script":
             ssh_port = query.get("ssh_port", ["29482"])[0]
             self.handle_download_windows_script(ssh_port)
+        elif parsed.path == "/api/download-apk":
+            self.handle_download_apk()
         elif parsed.path == "/api/health-check":
             ttyd_port = query.get("ttyd_port", ["34281"])[0]
             self.send_json(self.handle_health_check(ttyd_port))
@@ -216,6 +218,22 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Disposition", f"attachment; filename=setup-windows-host.bat")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def handle_download_apk(self):
+        apk_path = os.path.join(ASSETS_DIR, "DonagyKeyBridge.apk")
+        if not os.path.exists(apk_path):
+            self.send_error(404, "DonagyKeyBridge.apk not found in assets")
+            return
+
+        with open(apk_path, "rb") as f:
+            data = f.read()
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/vnd.android.package-archive")
+        self.send_header("Content-Disposition", "attachment; filename=DonagyKeyBridge.apk")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
