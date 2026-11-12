@@ -3,12 +3,12 @@
 # tm-jump: High-Speed Tmux Session Switcher (Alt + 1~9, Alt + 0, Alt + ` Toggle)
 # ==============================================================================
 # - Switches client attachments atomically (Mobile + PC Web simultaneously)
-# - Synchronizes /dev/shm/donagy_active_session for instant feeder targeting
+# - Synchronizes /dev/shm/wsl_active_session for instant feeder targeting
 # ==============================================================================
 
 export PATH="${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 ACTION="$1"
-ACTIVE_FILE="/dev/shm/donagy_active_session"
+ACTIVE_FILE="/dev/shm/wsl_active_session"
 DESC_FILE="${HOME}/.tmux_sessions.desc"
 
 get_ordered_sessions() {

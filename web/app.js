@@ -270,7 +270,7 @@ async function executePackageCheckOrInstall() {
         "Setting up tmux (3.4)...",
         "Setting up ttyd (1.7.4 Standalone)...",
         "Setting up cloudflared connector...",
-        "Setting up donagy-key-feeder and tm-jump...",
+        "Setting up wsl-key-feeder and tm-jump...",
         "All packages installed successfully! (Simulation Mode)"
       ];
       for (let i = 0; i < logs.length; i++) {

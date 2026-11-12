@@ -111,12 +111,12 @@ def download_binary(url, target_path):
 
 
 def deploy_assets_bundle(local_bin, user_home):
-    """Deploy donagy-key-feeder, tm-jump and merge .tmux.conf."""
+    """Deploy wsl-key-feeder, tm-jump and merge .tmux.conf."""
     os.makedirs(local_bin, exist_ok=True)
 
-    # 1. donagy-key-feeder
-    feeder_src = os.path.join(ASSETS_DIR, "donagy-key-feeder")
-    feeder_dst = os.path.join(local_bin, "donagy-key-feeder")
+    # 1. wsl-key-feeder
+    feeder_src = os.path.join(ASSETS_DIR, "wsl-key-feeder")
+    feeder_dst = os.path.join(local_bin, "wsl-key-feeder")
     if os.path.exists(feeder_src):
         shutil.copy2(feeder_src, feeder_dst)
         os.chmod(feeder_dst, 0o755)
@@ -164,8 +164,6 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path == "/api/download-windows-script":
             ssh_port = query.get("ssh_port", ["29482"])[0]
             self.handle_download_windows_script(ssh_port)
-        elif parsed.path == "/api/download-apk":
-            self.handle_download_apk()
         elif parsed.path == "/api/health-check":
             ttyd_port = query.get("ttyd_port", ["34281"])[0]
             self.send_json(self.handle_health_check(ttyd_port))
@@ -222,22 +220,6 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def handle_download_apk(self):
-        apk_path = os.path.join(ASSETS_DIR, "DonagyKeyBridge.apk")
-        if not os.path.exists(apk_path):
-            self.send_error(404, "DonagyKeyBridge.apk not found in assets")
-            return
-
-        with open(apk_path, "rb") as f:
-            data = f.read()
-
-        self.send_response(200)
-        self.send_header("Content-Type", "application/vnd.android.package-archive")
-        self.send_header("Content-Disposition", "attachment; filename=DonagyKeyBridge.apk")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
     def handle_inspect(self):
         wsl_detected = is_wsl()
         distro = get_linux_distro()
@@ -274,7 +256,7 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
             "ttyd": bool(shutil.which("ttyd") or os.path.exists(os.path.join(local_bin, "ttyd"))),
             "openssh": bool(shutil.which("sshd")),
             "cloudflared": bool(shutil.which("cloudflared") or os.path.exists(os.path.join(local_bin, "cloudflared"))),
-            "feeder": bool(os.path.exists(os.path.join(local_bin, "donagy-key-feeder")))
+            "feeder": bool(os.path.exists(os.path.join(local_bin, "wsl-key-feeder")))
         }
 
         return {
@@ -303,7 +285,7 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
                     {"name": "ttyd", "status": "installed", "version": "1.7.4 (Standalone)"},
                     {"name": "openssh-server", "status": "installed", "version": "1:9.6p1"},
                     {"name": "cloudflared", "status": "installed", "version": "latest (Standalone)"},
-                    {"name": "donagy-key-feeder", "status": "installed", "version": "v1.04"}
+                    {"name": "wsl-key-feeder", "status": "installed", "version": "v1.04"}
                 ]
             }
 
@@ -352,11 +334,11 @@ class WizardHandler(http.server.SimpleHTTPRequestHandler):
                 results.append({"name": pkg, "status": "missing", "detail": "Run: sudo apt install -y " + pkg})
 
         # 4. Feeder asset status
-        feeder_ok = os.path.exists(os.path.join(local_bin, "donagy-key-feeder"))
+        feeder_ok = os.path.exists(os.path.join(local_bin, "wsl-key-feeder"))
         results.append({
-            "name": "donagy-key-feeder",
+            "name": "wsl-key-feeder",
             "status": "installed" if feeder_ok else "missing",
-            "detail": os.path.join(local_bin, "donagy-key-feeder")
+            "detail": os.path.join(local_bin, "wsl-key-feeder")
         })
 
         status_flag = "error" if has_failure else ("partial" if missing_apt else "success")
@@ -546,8 +528,8 @@ WantedBy=default.target
         with open(key_path, "r", encoding="utf-8") as f:
             priv_content = f.read()
 
-        # Add to ~/.ssh/authorized_keys with FORCED COMMAND for donagy-key-feeder
-        feeder_bin = os.path.join(local_bin, "donagy-key-feeder")
+        # Add to ~/.ssh/authorized_keys with FORCED COMMAND for wsl-key-feeder
+        feeder_bin = os.path.join(local_bin, "wsl-key-feeder")
         forced_entry = f'command="{feeder_bin}",no-pty,no-X11-forwarding,no-port-forwarding {pub_content}'
 
         auth_keys = os.path.join(ssh_dir, "authorized_keys")
@@ -570,7 +552,7 @@ WantedBy=default.target
         return {
             "status": "success",
             "mode": "real",
-            "message": "KeyBridge ecosystem (donagy-key-feeder forced command) and Ed25519 key registered.",
+            "message": "KeyBridge ecosystem (wsl-key-feeder forced command) and Ed25519 key registered.",
             "public_key": pub_content,
             "private_key": priv_content,
             "key_path": key_path,
@@ -579,7 +561,7 @@ WantedBy=default.target
 
     def handle_health_check(self, ttyd_port):
         local_bin = ensure_local_bin_in_path()
-        feeder_ok = os.path.exists(os.path.join(local_bin, "donagy-key-feeder"))
+        feeder_ok = os.path.exists(os.path.join(local_bin, "wsl-key-feeder"))
 
         # Check local ttyd port response
         port_open = False

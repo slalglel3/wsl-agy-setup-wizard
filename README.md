@@ -17,7 +17,7 @@
 flowchart TD
     subgraph MobileDevice["모바일 (스마트폰 / 태블릿)"]
         PhysKB["물리 블루투스 키보드"]
-        KeyBridge["Donagy KeyBridge 앱 (0.1ms 무지연 브릿지)"]
+        KeyBridge["KeyBridge 앱 (0.1ms 무지연 브릿지)"]
         Browser["웹 브라우저 (Chrome / Safari)"]
         WebScreen["Read-Only 대시보드 화면"]
         PhysKB -->|"하드웨어 입력"| KeyBridge
@@ -96,4 +96,5 @@ git clone https://github.com/slalglel3/wsl-agy-setup-wizard.git && cd wsl-agy-se
 ## 📚 관련 상세 문서
 
 - [시스템 아키텍처 상세 명세 (SYSTEM_SPEC.md)](./SYSTEM_SPEC.md) - 전체 컴포넌트, 프로세스 트리, 통신 프로토콜 명세
+- [KeyBridge 모바일 앱 아키텍처 및 빌드 가이드 (KEYBRIDGE_GUIDE.md)](./KEYBRIDGE_GUIDE.md) - 0.1ms 무지연 물리 키보드 브릿지 앱 소스코드 및 빌드 안내
 - [에이전트 자가 진단 및 문제 해결 가이드 (TROUBLESHOOTING.md)](./TROUBLESHOOTING.md) - AGY CLI가 직접 읽고 스스로 문제를 판별/복구할 수 있는 자가 진단 매뉴얼

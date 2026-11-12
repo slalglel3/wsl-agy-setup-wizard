@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-donagy-key-feeder: Zero-Latency Shell-less Key Injection Daemon for WSL Dual System
+wsl-key-feeder: Zero-Latency Shell-less Key Injection Daemon for WSL Dual System
 - Reads raw/hex bytes from stdin (via SSH forced command)
 - Resolves the current active tmux session (with fast cache)
 - Intercepts Alt + 1~9, Alt + 0, Alt + ` for instant tm-jump session switching
@@ -25,9 +25,9 @@ USER_HOME = os.path.expanduser("~")
 TM_JUMP = os.path.join(USER_HOME, ".local/bin/tm-jump")
 TM_TABBAR = os.path.join(USER_HOME, ".local/bin/tm-tabbar")
 TMUX = shutil.which("tmux") or "/usr/bin/tmux"
-ACTIVE_SESSION_FILE = "/dev/shm/donagy_active_session"
-KB_STATE_FILE = "/dev/shm/donagy_kb_state"
-LOG_FILE = "/tmp/donagy-feeder.log"
+ACTIVE_SESSION_FILE = "/dev/shm/wsl_active_session"
+KB_STATE_FILE = "/dev/shm/wsl_kb_state"
+LOG_FILE = "/tmp/wsl-feeder.log"
 
 def log(msg):
     try:
@@ -51,7 +51,7 @@ def sig_handler(signum, frame):
     sys.exit(0)
 
 def get_active_session(override_target=None):
-    if override_target and override_target != "donagy-key-feeder":
+    if override_target and override_target != "wsl-key-feeder":
         try:
             res = subprocess.run(
                 [TMUX, "has-session", "-t", override_target],
@@ -153,7 +153,7 @@ def run_loop():
     override_target = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("SSH_ORIGINAL_COMMAND")
     if override_target:
         override_target = override_target.strip().split()[0] if override_target.strip() else None
-        if override_target == "donagy-key-feeder":
+        if override_target == "wsl-key-feeder":
             override_target = None
 
     stdin_fd = sys.stdin.fileno()
